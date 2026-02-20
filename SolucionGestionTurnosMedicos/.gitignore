@@ -1,0 +1,57 @@
+# Visual Studio / IDE
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.psess
+
+# Compilación
+bin/
+obj/
+*.exe
+*.dll
+*.log
+*.tmp
+Publish/
+
+# Bases de datos locales
+*.mdf
+*.ldf
+*.db
+*.dbmdl
+
+# Paquetes y dependencias
+node_modules/
+bower_components/
+packages/
+*.nupkg
+
+# Archivos de sistema y temporales
+.DS_Store
+Thumbs.db
+*.zip
+*.rar
+*.pptx
+*.avi
+*.mp4
+*.mov
+
+# Configuración de entorno / secretos
+.env
+appsettings.Development.json
+secrets.json
+
+# Archivos generados automáticamente
+*.generated.cs
+
+# Otros
+*.orig
+*.xml
+*.backup
+*.~vsd
+*.sublime-project
+*.sublime-workspace
+
+# Test Results
+*/Performance/*TestResults.txt
