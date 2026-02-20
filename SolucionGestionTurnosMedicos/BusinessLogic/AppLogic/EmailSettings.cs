@@ -2,10 +2,8 @@
 {
     public class EmailSettings
     {
-
-        public string? Username { get => "consultorios.agjs@gmail.com"; set=> Username = value; }
-        public string? Password { get => "kmehqfdvjgtpqkiz"; set => Password = value; }
-        public int Port { get => 587; set => Port = value; }
-
+        public string Username { get; set; } = default!;
+        public string Password { get; set; } = default!;
+        public int Port { get; set; } = 587; // se puede parametrizar también si quieres
     }
 }

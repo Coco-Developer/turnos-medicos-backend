@@ -12,74 +12,56 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using DotNetEnv;
+using System.IO;
 
-// -----------------------
-// 0. Cargar variables de entorno
-// -----------------------
-Env.Load(); // Lee .env en la raíz del proyecto
+// Cargar .env
+var envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
+if (File.Exists(envPath)) Env.Load(envPath);
 
 var builder = WebApplication.CreateBuilder(args);
 var configuration = builder.Configuration;
 var environment = builder.Environment;
 
-// -----------------------
-// 1. Sobrescribir configuración sensible desde .env
-// -----------------------
-builder.Configuration["ConnectionStrings:DefaultConnection"] =
-    Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
+// Sobrescribir configuración desde .env
+configuration["ConnectionStrings:DefaultConnection"] = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
+configuration["JwtSettings:Key"] = Environment.GetEnvironmentVariable("JWT_KEY");
+configuration["JwtSettings:Issuer"] = Environment.GetEnvironmentVariable("JWT_ISSUER");
+configuration["JwtSettings:Audience"] = Environment.GetEnvironmentVariable("JWT_AUDIENCE");
+configuration["EmailSettings:Username"] = Environment.GetEnvironmentVariable("EMAIL_USERNAME");
+configuration["EmailSettings:Password"] = Environment.GetEnvironmentVariable("EMAIL_PASSWORD");
+configuration["AllowedApiKeys"] = Environment.GetEnvironmentVariable("API_KEYS");
 
-builder.Configuration["GmailSettings:Username"] =
-    Environment.GetEnvironmentVariable("GMAIL_USERNAME");
+// Validar secretos críticos
+if (string.IsNullOrEmpty(configuration["JwtSettings:Key"])) throw new InvalidOperationException("JWT_KEY no configurado");
+if (string.IsNullOrEmpty(configuration["ConnectionStrings:DefaultConnection"])) throw new InvalidOperationException("DB_CONNECTION_STRING no configurado");
 
-builder.Configuration["GmailSettings:Password"] =
-    Environment.GetEnvironmentVariable("GMAIL_PASSWORD");
+// POCOs
+builder.Services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));
+builder.Services.Configure<EmailSettings>(configuration.GetSection("EmailSettings"));
 
-builder.Configuration["JwtSettings:Key"] =
-    Environment.GetEnvironmentVariable("JWT_KEY");
+// API Keys
+var allowedApiKeysArray = configuration["AllowedApiKeys"]?
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+    ?? Array.Empty<string>();
+builder.Services.AddSingleton(allowedApiKeysArray);
 
-// Guardamos API_KEYS como string y convertimos a array solo cuando lo usamos
-builder.Configuration["AllowedApiKeys"] = Environment.GetEnvironmentVariable("API_KEYS");
-
-// -----------------------
-// 2. Controllers
-// -----------------------
+// Controllers
 builder.Services.AddControllers();
 
-// -----------------------
-// 3. CORS
-// -----------------------
-var origenLocalHost = "_origenLocalHost";
+// CORS
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy =>
-        policy.SetIsOriginAllowed(origin => new Uri(origin).Host == "localhost")
+    options.AddPolicy("FrontCors", policy =>
+        policy.WithOrigins("http://localhost:3000")
               .AllowAnyHeader()
-              .AllowAnyMethod()
-    );
-
-    options.AddPolicy(origenLocalHost, policy =>
-        policy.SetIsOriginAllowed(origin =>
-        {
-            try
-            {
-                return origin.StartsWith("http://192.168.") || origin.StartsWith("http://localhost");
-            }
-            catch { return false; }
-        })
-        .AllowAnyHeader()
-        .AllowAnyMethod()
-    );
+              .AllowAnyMethod());
 });
 
-// -----------------------
-// 4. Swagger / OpenAPI
-// -----------------------
+// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "ChronoMed API", Version = "v1.6" });
-
-    // ApiKey
     c.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
     {
         Name = "X-API-KEY",
@@ -87,18 +69,14 @@ builder.Services.AddSwaggerGen(c =>
         In = ParameterLocation.Header,
         Description = "Ingresa tu API Key válida"
     });
-
-    // JWT Bearer
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
         Type = SecuritySchemeType.Http,
         Scheme = "Bearer",
         BearerFormat = "JWT",
-        In = ParameterLocation.Header,
-        Description = "Authorization: Bearer {token}"
+        In = ParameterLocation.Header
     });
-
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         { new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "ApiKey" } }, Array.Empty<string>() },
@@ -106,16 +84,12 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// -----------------------
-// 5. DbContext
-// -----------------------
+// DbContext
 builder.Services.AddDbContext<GestionTurnosContext>(opt =>
-    opt.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
+    opt.UseSqlServer(configuration.GetConnectionString("DefaultConnection"))
 );
 
-// -----------------------
-// 6. DI: Servicios y repositorios
-// -----------------------
+// DI Servicios
 builder.Services.AddTransient<IMessage, Message>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -127,51 +101,36 @@ builder.Services.AddScoped<PacienteLogic>();
 builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<EmailService>();
 
-// -----------------------
-// 7. JWT
-// -----------------------
-builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
-var jwtCfg = builder.Configuration.GetSection("JwtSettings");
+// JWT Authentication
+var jwtCfg = configuration.GetSection("JwtSettings");
 var key = Encoding.UTF8.GetBytes(jwtCfg["Key"]!);
-
-// -----------------------
-// 8. Autenticación JWT
-// -----------------------
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.RequireHttpsMetadata = false;
-    options.TokenValidationParameters = new TokenValidationParameters
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
     {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = jwtCfg["Issuer"],
-        ValidAudience = jwtCfg["Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(key),
-        ClockSkew = TimeSpan.Zero
-    };
-});
+        options.RequireHttpsMetadata = !environment.IsDevelopment();
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtCfg["Issuer"],
+            ValidAudience = jwtCfg["Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(key),
+            ClockSkew = TimeSpan.Zero
+        };
+    });
 
 var app = builder.Build();
 
-// -----------------------
-// 9. Pipeline
-// -----------------------
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "ChronoMed API v1.6"));
 }
 
-app.UseCors(origenLocalHost);
+app.UseCors("FrontCors");
 
-// Middleware OPTIONS preflight
 app.Use(async (context, next) =>
 {
     if (context.Request.Method == "OPTIONS")
@@ -192,17 +151,9 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.MapControllers();
 
-// -----------------------
-// 10. Endpoint email
-// -----------------------
 app.MapPost("/sendEmail", (SendEmailRequest req, IMessage svc) =>
 {
     svc.SendEmail(req.Subject, req.Body, req.To);
 });
-
-// -----------------------
-// 11. Uso de AllowedApiKeys en runtime
-// -----------------------
-var allowedApiKeys = builder.Configuration["AllowedApiKeys"]?.Split(',') ?? Array.Empty<string>();
 
 app.Run();
