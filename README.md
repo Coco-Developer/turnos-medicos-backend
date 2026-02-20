@@ -29,4 +29,8 @@ El proyecto fue desarrollado como un caso práctico profesionalizante, poniendo 
 - Gauna Martínez, Santiago  
 - Gil Duarte, Gabriela  
 - Landeau, Andrés  
+<<<<<<< HEAD
 - Lázaro, Joaquín
+=======
+- Lázaro, Joaquín
+>>>>>>> 3258da4572726d046a700c5636324f453f32755e
