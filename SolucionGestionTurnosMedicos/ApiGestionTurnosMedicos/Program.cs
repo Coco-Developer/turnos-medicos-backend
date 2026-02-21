@@ -11,42 +11,157 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Swashbuckle.AspNetCore.SwaggerGen;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
-var configuration = builder.Configuration;
-var environment = builder.Environment;
 
-// Validaciones críticas
-if (string.IsNullOrEmpty(configuration["JwtSettings:Key"]))
-    throw new InvalidOperationException("JwtSettings:Key no configurado");
+// ---------------------------------------------------------
+// 1. Configuración de Logging
+// ---------------------------------------------------------
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
 
-if (string.IsNullOrEmpty(configuration.GetConnectionString("DefaultConnection")))
-    throw new InvalidOperationException("ConnectionStrings:DefaultConnection no configurado");
+// ---------------------------------------------------------
+// 2. Configuración de Base de Datos (Optimizado para Azure)
+// ---------------------------------------------------------
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
-// POCOs
-builder.Services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));
-builder.Services.Configure<EmailSettings>(configuration.GetSection("GmailSettings"));
+builder.Services.AddDbContext<GestionTurnosContext>(options =>
+{
+    options.UseSqlServer(connectionString, sqlOptions =>
+    {
+        // Resiliencia: Reintentos automáticos para fallos transitorios en la nube
+        sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(30),
+            errorNumbersToAdd: null);
+    });
 
-// API Keys
-var allowedApiKeys = configuration.GetSection("AllowedApiKeys").Get<string[]>() ?? Array.Empty<string>();
+    if (builder.Environment.IsDevelopment())
+    {
+        // Permite ver datos de parámetros en los logs de error (solo desarrollo)
+        options.EnableSensitiveDataLogging();
+    }
+});
+
+// ---------------------------------------------------------
+// 3. Seguridad, JWT y Configuración (POCOs)
+// ---------------------------------------------------------
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+var keyString = jwtSettings["Key"] ?? throw new ArgumentNullException("JWT Key missing in configuration.");
+var key = Encoding.UTF8.GetBytes(keyString);
+
+builder.Services.Configure<JwtSettings>(jwtSettings);
+builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("GmailSettings"));
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtSettings["Issuer"],
+            ValidAudience = jwtSettings["Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(key),
+            ClockSkew = TimeSpan.Zero
+        };
+    });
+
+// ---------------------------------------------------------
+// 4. Inyección de Dependencias (DI) - Repositorios y Lógica
+// ---------------------------------------------------------
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(ConfigureSwagger);
+
+// --- REPOSITORIOS (Capa DataAccess) ---
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<PacienteRepository>();
+builder.Services.AddScoped<MedicoRepository>();
+builder.Services.AddScoped<TurnoRepository>();
+builder.Services.AddScoped<EspecialidadRepository>();
+builder.Services.AddScoped<EstadoRepository>();
+
+// --- LÓGICA DE NEGOCIO (Capa BusinessLogic) ---
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<AdminSetupService>(); // Resuelve error 500
+builder.Services.AddScoped<PacienteLogic>();
+builder.Services.AddScoped<MedicoLogic>();
+builder.Services.AddScoped<TurnoLogic>();
+builder.Services.AddScoped<EspecialidadLogic>();
+builder.Services.AddScoped<EstadoLogic>();
+
+// --- SERVICIOS TRANSVERSALES ---
+builder.Services.AddScoped<EmailService>();
+builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+builder.Services.AddTransient<IMessage, Message>();
+builder.Services.AddScoped<IPasswordHasher<Usuario>, PasswordHasher<Usuario>>();
+
+// --- CONFIGURACIÓN API KEYS ---
+var allowedApiKeys = builder.Configuration.GetSection("AllowedApiKeys").Get<string[]>() ?? Array.Empty<string>();
 builder.Services.AddSingleton<IList<string>>(allowedApiKeys);
 
-// Controllers
-builder.Services.AddControllers();
-
-// CORS
+// --- CORS ---
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontCors", policy =>
-        policy.WithOrigins("http://localhost:3000") // cambiar según front
+        policy.WithOrigins("http://localhost:3000")
               .AllowAnyHeader()
               .AllowAnyMethod());
 });
 
-// Swagger
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
+var app = builder.Build();
+
+// ---------------------------------------------------------
+// 5. Pipeline de Middlewares (Orden Crítico)
+// ---------------------------------------------------------
+
+// Manejo global de excepciones (siempre primero)
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c => {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "ChronoMed API v1.6");
+    });
+
+    // TEST DE CONEXIÓN REAL AL INICIAR
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<GestionTurnosContext>();
+        try
+        {
+            var server = db.Database.GetDbConnection().DataSource;
+            Console.WriteLine($"🔍 Intentando conectar a: {server}");
+            if (db.Database.CanConnect())
+            {
+                Console.WriteLine("✅ Conexión a Azure SQL exitosa.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ Error crítico de conexión: {ex.Message}");
+        }
+    }
+}
+
+app.UseCors("FrontCors");
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+
+app.Run();
+
+// ---------------------------------------------------------
+// Helper: Configuración de Swagger (Seguridad)
+// ---------------------------------------------------------
+void ConfigureSwagger(SwaggerGenOptions c)
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "ChronoMed API", Version = "v1.6" });
 
@@ -54,7 +169,8 @@ builder.Services.AddSwaggerGen(c =>
     {
         Name = "X-API-KEY",
         Type = SecuritySchemeType.ApiKey,
-        In = ParameterLocation.Header
+        In = ParameterLocation.Header,
+        Description = "Clave API necesaria para acceder a ciertos recursos"
     });
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -63,82 +179,19 @@ builder.Services.AddSwaggerGen(c =>
         Type = SecuritySchemeType.Http,
         Scheme = "Bearer",
         BearerFormat = "JWT",
-        In = ParameterLocation.Header
+        In = ParameterLocation.Header,
+        Description = "Ingrese el token JWT: Bearer {su_token}"
     });
 
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "ApiKey" }
-            },
+            new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "ApiKey" } },
             Array.Empty<string>()
         },
         {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
-            },
+            new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" } },
             Array.Empty<string>()
         }
     });
-});
-
-// DbContext
-builder.Services.AddDbContext<GestionTurnosContext>(opt =>
-    opt.UseSqlServer(configuration.GetConnectionString("DefaultConnection"))
-);
-
-// DI Servicios
-builder.Services.AddTransient<IMessage, Message>();
-builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IPasswordHasher<Usuario>, PasswordHasher<Usuario>>();
-builder.Services.AddScoped<AdminSetupService>();
-builder.Services.AddScoped<TurnoRepository>();
-builder.Services.AddScoped<PacienteRepository>();
-builder.Services.AddScoped<PacienteLogic>();
-builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
-builder.Services.AddScoped<EmailService>();
-
-// JWT
-var jwtCfg = configuration.GetSection("JwtSettings");
-var key = Encoding.UTF8.GetBytes(jwtCfg["Key"]!);
-
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.RequireHttpsMetadata = !environment.IsDevelopment();
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtCfg["Issuer"],
-            ValidAudience = jwtCfg["Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(key),
-            ClockSkew = TimeSpan.Zero
-        };
-    });
-
-var app = builder.Build();
-
-// Middlewares
-app.UseMiddleware<ExceptionHandlingMiddleware>();
-app.UseCors("FrontCors");
-app.UseAuthentication();
-app.UseAuthorization();
-
-// Swagger solo en dev
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "ChronoMed API v1.6"));
 }
-
-app.MapControllers();
-
-app.Run();

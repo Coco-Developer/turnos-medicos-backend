@@ -1,14 +1,14 @@
 {
   "profiles": {
     "ApiGestionTurnosMedicos": {
-        "commandName": "Project",
-        "launchBrowser": true,
-        "launchUrl": "swagger",
-        "environmentVariables": {
-            "ASPNETCORE_ENVIRONMENT": "Development"
-        },
-        "dotnetRunMessages": true,
-        "applicationUrl": "http://localhost:9009;http://localhost:5257;http://0.0.0.0:9009"
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "dotnetRunMessages": true,
+      "applicationUrl": "http://localhost:9009;https://localhost:9008"
     },
     "IIS Express": {
       "commandName": "IISExpress",

@@ -5,10 +5,6 @@ namespace DataAccess.Context
 {
     public partial class GestionTurnosContext : DbContext
     {
-        public GestionTurnosContext()
-        {
-        }
-
         public GestionTurnosContext(DbContextOptions<GestionTurnosContext> options)
             : base(options)
         {
