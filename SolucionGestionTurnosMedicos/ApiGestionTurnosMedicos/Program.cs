@@ -144,7 +144,7 @@ app.UseCors("FrontCors");
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.UseMiddleware<ApiKeyMiddleware>();
+// app.UseMiddleware<ApiKeyMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.MapControllers();
