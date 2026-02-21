@@ -110,7 +110,11 @@ builder.Services.AddSingleton<IList<string>>(allowedApiKeys);
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontCors", policy =>
-        policy.WithOrigins("http://localhost:3000")
+       policy.WithOrigins(
+                "http://localhost:5173", // Puerto por defecto de Vite (el que estás usando)
+                "http://localhost:3000"  // Tu puerto anterior por las dudas
+                                         
+              )
               .AllowAnyHeader()
               .AllowAnyMethod());
 });
