@@ -4,11 +4,9 @@
 ![](https://img.shields.io/badge/.NET-512BD4?style=for-the-badge&logo=dotnet&logoColor=white) ![](https://img.shields.io/badge/C%23-239120?style=for-the-badge&logo=csharp&logoColor=white) ![](https://img.shields.io/badge/Microsoft%20SQL%20Server-CC2927?style=for-the-badge&logo=microsoft%20sql%20server&logoColor=white)
 
 
-Backend de la API realizada en C# como práctico de la cátedra de Práctica Profesionalizante de Desarrollo Web y Aplicaciones Digitales de Institución Cervantes.
-
 ## Descripción
 
-Esta API gestiona turnos médicos y almacena los datos en SQL Server, permitiendo:
+Esta API gestiona turnos médicos y almacena los datos en AZURE SQL Server, permitiendo:
 
 - Crear y administrar turnos de pacientes  
 - Registrar información de pacientes y médicos  
@@ -19,8 +17,8 @@ El proyecto fue desarrollado como un caso práctico profesionalizante, poniendo 
 
 ## Tecnologías
 
-- **Backend:** C# / .NET 6/7  
-- **Base de datos:** SQL Server  
+- **Backend:** C# / .NET 8
+- **Base de datos:** AZURE SQL Server  
 - **Autenticación:** JWT y API Key  
 - **Notificaciones:** SMTP (Gmail)  
 
@@ -29,8 +27,5 @@ El proyecto fue desarrollado como un caso práctico profesionalizante, poniendo 
 - Gauna Martínez, Santiago  
 - Gil Duarte, Gabriela  
 - Landeau, Andrés  
-<<<<<<< HEAD
 - Lázaro, Joaquín
-=======
-- Lázaro, Joaquín
->>>>>>> 3258da4572726d046a700c5636324f453f32755e
+
