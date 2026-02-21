@@ -5,6 +5,7 @@ using SendGrid.Helpers.Errors.Model;
 using Microsoft.AspNetCore.Identity;
 using Models.CustomModels;
 using Models.DTOs;
+using DataAccess.Context;
 
 namespace BusinessLogic.AppLogic
 {

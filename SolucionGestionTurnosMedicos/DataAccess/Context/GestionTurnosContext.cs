@@ -1,6 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using DataAccess.Data;
+using Microsoft.EntityFrameworkCore;
 
-namespace DataAccess.Data
+namespace DataAccess.Context
 {
     public partial class GestionTurnosContext : DbContext
     {

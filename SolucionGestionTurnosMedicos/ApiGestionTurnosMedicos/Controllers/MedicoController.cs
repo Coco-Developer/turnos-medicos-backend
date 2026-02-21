@@ -5,6 +5,7 @@ using ApiGestionTurnosMedicos.CustomModels;
 using ApiGestionTurnosMedicos.Validations;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
+using DataAccess.Context;
 
 namespace ApiGestionTurnosMedicos.Controllers
 {

@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using DataAccess.Data;
+using DataAccess.Context;
 
 namespace Testing
 {

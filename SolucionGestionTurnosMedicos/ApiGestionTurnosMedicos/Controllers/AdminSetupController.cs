@@ -1,5 +1,4 @@
-﻿// Controllers/AdminSetupController.cs
-using BusinessLogic.AppLogic.Services;
+﻿using BusinessLogic.AppLogic.Services;
 using Microsoft.AspNetCore.Mvc;
 using Models.CustomModels;
 
@@ -18,16 +17,19 @@ namespace ApiGestionTurnosMedicos.Controllers
             _env = env;
         }
 
+        /// <summary>
+        /// Crea un usuario administrador.
+        /// SOLO DISPONIBLE EN ENTORNO DEVELOPMENT.
+        /// </summary>
         [HttpPost("crear-admin")]
         public async Task<IActionResult> CrearAdmin([FromBody] AdminRegisterDto dto)
         {
-            // Permitir solo en entorno Development
             if (!_env.IsDevelopment())
-                return Unauthorized("Este endpoint solo está disponible en entorno de desarrollo.");
+                return Unauthorized(new { message = "Este endpoint solo está disponible en entorno de desarrollo." });
 
             var (success, message) = await _adminSetupService.CrearAdminAsync(dto);
 
-            return success ? Ok(message) : BadRequest(message);
+            return success ? Ok(new { message }) : BadRequest(new { message });
         }
     }
 }

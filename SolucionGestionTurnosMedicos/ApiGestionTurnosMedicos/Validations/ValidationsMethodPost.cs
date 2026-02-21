@@ -7,6 +7,7 @@ using System;
 using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
 using System.Linq;
+using DataAccess.Context;
 
 namespace ApiGestionTurnosMedicos.Validations
 {

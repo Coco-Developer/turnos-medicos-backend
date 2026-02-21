@@ -1,4 +1,5 @@
 ﻿// DataAccess/Repository/UserRepository.cs
+using DataAccess.Context;
 using DataAccess.Data;
 using Microsoft.EntityFrameworkCore;
 

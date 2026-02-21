@@ -3,6 +3,7 @@ using ApiGestionTurnosMedicos.Middlewares;
 using ApiGestionTurnosMedicos.Services;
 using BusinessLogic.AppLogic;
 using BusinessLogic.AppLogic.Services;
+using DataAccess.Context;
 using DataAccess.Data;
 using DataAccess.Repository;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -16,7 +17,7 @@ var builder = WebApplication.CreateBuilder(args);
 var configuration = builder.Configuration;
 var environment = builder.Environment;
 
-// Validación crítica
+// Validaciones críticas
 if (string.IsNullOrEmpty(configuration["JwtSettings:Key"]))
     throw new InvalidOperationException("JwtSettings:Key no configurado");
 
@@ -27,9 +28,9 @@ if (string.IsNullOrEmpty(configuration.GetConnectionString("DefaultConnection"))
 builder.Services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));
 builder.Services.Configure<EmailSettings>(configuration.GetSection("GmailSettings"));
 
-// API Keys (ahora lee array real desde Azure)
+// API Keys
 var allowedApiKeys = configuration.GetSection("AllowedApiKeys").Get<string[]>() ?? Array.Empty<string>();
-builder.Services.AddSingleton(allowedApiKeys);
+builder.Services.AddSingleton<IList<string>>(allowedApiKeys);
 
 // Controllers
 builder.Services.AddControllers();
@@ -38,7 +39,7 @@ builder.Services.AddControllers();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontCors", policy =>
-        policy.WithOrigins("http://localhost:3000")
+        policy.WithOrigins("http://localhost:3000") // cambiar según front
               .AllowAnyHeader()
               .AllowAnyMethod());
 });
@@ -70,22 +71,14 @@ builder.Services.AddSwaggerGen(c =>
         {
             new OpenApiSecurityScheme
             {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "ApiKey"
-                }
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "ApiKey" }
             },
             Array.Empty<string>()
         },
         {
             new OpenApiSecurityScheme
             {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
             },
             Array.Empty<string>()
         }
@@ -132,20 +125,19 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 var app = builder.Build();
 
+// Middlewares
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+app.UseCors("FrontCors");
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Swagger solo en dev
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI(c =>
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "ChronoMed API v1.6"));
 }
-
-app.UseCors("FrontCors");
-
-app.UseAuthentication();
-app.UseAuthorization();
-
-// app.UseMiddleware<ApiKeyMiddleware>();
-app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.MapControllers();
 

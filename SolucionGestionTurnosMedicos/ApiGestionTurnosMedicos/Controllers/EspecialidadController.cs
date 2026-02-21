@@ -1,99 +1,120 @@
 ﻿using BusinessLogic.AppLogic;
+using DataAccess.Context;
 using DataAccess.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ApiGestionTurnosMedicos.Controllers
 {
-    /// <summary>
-    /// Controlador API para la gestión de especialidades médicas
-    /// </summary>
     [Authorize]
-    [Route("/[controller]")]
+    [Route("[controller]")]
     [ApiController]
     public class EspecialidadController : ControllerBase
     {
-        #region ContextDataBase
         private readonly EspecialidadLogic _eLogic;
+        private readonly ILogger<EspecialidadController> _logger;
 
-        /// <summary>
-        /// Constructor del controlador de especialidades
-        /// </summary>
-        /// <param name="context">Contexto de la base de datos para operaciones CRUD</param>
-        public EspecialidadController(GestionTurnosContext context)
+        public EspecialidadController(GestionTurnosContext context, ILogger<EspecialidadController> logger)
         {
             _eLogic = new EspecialidadLogic(context);
+            _logger = logger;
         }
-        #endregion
 
-        /// <summary>
-        /// Obtiene la lista completa de especialidades
-        /// </summary>
-        /// <returns>Lista de objetos Especialidad</returns>
         [HttpGet]
-        public List<Especialidad> Get()
+        public ActionResult<List<Especialidad>> Get()
         {
-            return _eLogic.SpecialtyList();
+            try
+            {
+                return Ok(_eLogic.SpecialtyList());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error obteniendo lista de especialidades");
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
-        /// <summary>
-        /// Obtiene una especialidad específica por su identificador
-        /// </summary>
-        /// <param name="id">Identificador único de la especialidad</param>
-        /// <returns>Objeto Especialidad correspondiente al ID proporcionado</returns>
         [HttpGet("{id}")]
-        public Especialidad Get(int id)
+        public ActionResult<Especialidad> Get(int id)
         {
-            return _eLogic.GetSpecialtyForId(id);
+            try
+            {
+                var especialidad = _eLogic.GetSpecialtyForId(id);
+                if (especialidad == null)
+                    return NotFound(new { message = "Especialidad no encontrada" });
+
+                return Ok(especialidad);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error obteniendo especialidad ID {Id}", id);
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
-        /// <summary>
-        /// Crea una nueva especialidad en el sistema
-        /// </summary>
-        /// <param name="oEspecialidad">Objeto Especialidad con los datos a crear</param>
-        /// <returns>Resultado de la operación con estado HTTP</returns>
         [HttpPost]
         [Authorize(Roles = "Admin")]
         public IActionResult Post([FromBody] Especialidad oEspecialidad)
         {
-            _eLogic.CreateSpecialty(oEspecialidad);
-            return Ok();
+            try
+            {
+                _eLogic.CreateSpecialty(oEspecialidad);
+                _logger.LogInformation("Especialidad creada: {Nombre}", oEspecialidad.Nombre);
+                return Ok(new { message = "Especialidad creada correctamente" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creando especialidad");
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
-        /// <summary>
-        /// Actualiza una especialidad existente
-        /// </summary>
-        /// <param name="id">Identificador de la especialidad a actualizar</param>
-        /// <param name="oEspecialidad">Objeto Especialidad con los datos actualizados</param>
-        /// <returns>Resultado de la operación con estado HTTP</returns>
         [HttpPut("{id}")]
         [Authorize(Roles = "Admin")]
         public IActionResult Put(int id, [FromBody] Especialidad oEspecialidad)
         {
-            _eLogic.UpdateSpecialty(id, oEspecialidad);
-            return Ok();
+            try
+            {
+                _eLogic.UpdateSpecialty(id, oEspecialidad);
+                _logger.LogInformation("Especialidad ID {Id} actualizada", id);
+                return Ok(new { message = "Especialidad actualizada correctamente" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error actualizando especialidad ID {Id}", id);
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
-        /// <summary>
-        /// Elimina una especialidad del sistema
-        /// </summary>
-        /// <param name="id">Identificador de la especialidad a eliminar</param>
         [HttpDelete("{id}")]
         [Authorize(Roles = "Admin")]
         public IActionResult Delete(int id)
         {
-            _eLogic.DeleteSpecialty(id);
-            return Ok();
+            try
+            {
+                _eLogic.DeleteSpecialty(id);
+                _logger.LogInformation("Especialidad ID {Id} eliminada", id);
+                return Ok(new { message = "Especialidad eliminada correctamente" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error eliminando especialidad ID {Id}", id);
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
-        /// <summary>
-        /// Obtiene la lista de especialidades cubiertas
-        /// </summary>
-        /// <returns>Lista de objetos Especialidad que están cubiertas</returns>
         [HttpGet("list-covered-specialty")]
-        public List<Especialidad> GetListCoveredSpecialty()
+        public ActionResult<List<Especialidad>> GetListCoveredSpecialty()
         {
-            return _eLogic.CoveredSpecialtyList();
+            try
+            {
+                return Ok(_eLogic.CoveredSpecialtyList());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error obteniendo especialidades cubiertas");
+                return BadRequest(new { message = ex.Message });
+            }
         }
     }
 }

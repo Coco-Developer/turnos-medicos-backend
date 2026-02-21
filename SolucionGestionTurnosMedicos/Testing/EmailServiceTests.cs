@@ -1,6 +1,8 @@
 using System.Net.Mail;
 using BusinessLogic.AppLogic.Services;
 using ApiGestionTurnosMedicos.CustomModels;
+using Xunit;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Testing
 {
@@ -34,7 +36,7 @@ namespace Testing
 
             // Assert
             mockSender.Verify(s => s.SendEmail(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IEnumerable<LinkedResource>>()), Times.Once);
-            Assert.Equal("jp@test.com", capturedTo);
+            Assert.AreEqual("jp@test.com", capturedTo);
             Assert.Contains("Constancia de turno", capturedSubject);
             Assert.Contains("31/12/2025", capturedBody);
             Assert.Contains("09:30", capturedBody);
@@ -69,7 +71,7 @@ namespace Testing
             service.SendPasswordResetEmail(email, newPassword);
             //
             // Assert
-            Assert.Equal(email, capturedTo);
+            Assert.AreEqual(email, capturedTo);
             Assert.Contains("Nueva Contraseña", capturedSubject);
             Assert.Contains(newPassword, capturedBody);
         }
