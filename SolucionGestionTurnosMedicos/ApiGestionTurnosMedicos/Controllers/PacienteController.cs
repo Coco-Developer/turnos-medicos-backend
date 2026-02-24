@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Models.CustomModels;
 using Models.DTOs;
 using System.Security.Claims;
-using DataAccess.Context; // Asegúrate de tener acceso al context para las validaciones
+using DataAccess.Context;
 
 namespace ApiGestionTurnosMedicos.Controllers
 {
@@ -17,7 +17,7 @@ namespace ApiGestionTurnosMedicos.Controllers
     {
         private readonly PacienteLogic _pacienteLogic;
         private readonly ILogger<PacienteController> _logger;
-        private readonly GestionTurnosContext _context; // Necesario para instanciar las validaciones
+        private readonly GestionTurnosContext _context;
 
         public PacienteController(PacienteLogic pacienteLogic, ILogger<PacienteController> logger, GestionTurnosContext context)
         {
@@ -43,18 +43,41 @@ namespace ApiGestionTurnosMedicos.Controllers
             }
         }
 
+        // CORRECCIÓN 1: Agregamos :int para que este método SOLO acepte números.
+        // Si el front manda "get-dni", .NET ignorará este método y buscará el siguiente.
         [Authorize(Roles = UserRoles.Admin)]
-        [HttpGet("{id}")]
+        [HttpGet("{id:int}")]
         public async Task<ActionResult<Paciente>> GetPatientById(int id)
         {
             try
             {
                 var patient = await _pacienteLogic.GetPatientForIdAsync(id);
+                if (patient == null) return NotFound(new { message = "Paciente no encontrado" });
                 return Ok(patient);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo paciente por ID");
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        // CORRECCIÓN 2: Agregamos explícitamente el método para el DNI que pide tu Frontend.
+        [Authorize(Roles = UserRoles.Admin)]
+        [HttpGet("get-dni")]
+        public async Task<ActionResult<Paciente>> GetPatientByDni([FromQuery] string dni)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(dni)) return BadRequest(new { message = "El DNI es requerido" });
+
+                var patient = await _pacienteLogic.GetPatientForDNIAsync(dni);
+                if (patient == null) return NotFound(new { message = "No existe paciente con ese DNI" });
+
+                return Ok(patient);
+            }
+            catch (Exception ex)
+            {
                 return BadRequest(new { message = ex.Message });
             }
         }
@@ -73,7 +96,6 @@ namespace ApiGestionTurnosMedicos.Controllers
                 Dni = dto.Dni
             };
 
-            // AGREGADO: Validación antes de la creación
             var validations = new ValidationsMethodPost(_context);
             var validationResult = await validations.ValidationsMethodPostPatient(oPatient);
 
@@ -95,10 +117,9 @@ namespace ApiGestionTurnosMedicos.Controllers
         }
 
         [Authorize(Roles = UserRoles.Admin)]
-        [HttpPut("{id}")]
+        [HttpPut("{id:int}")] // También agregamos :int aquí por seguridad
         public async Task<IActionResult> UpdatePatientAsync(int id, [FromBody] UpdatePatientDto pacienteDto)
         {
-            // Aquí podrías agregar ValidationsMethodPut si fuera necesario
             try
             {
                 await _pacienteLogic.UpdatePatientAsync(id, pacienteDto);
@@ -112,7 +133,7 @@ namespace ApiGestionTurnosMedicos.Controllers
         }
 
         [Authorize(Roles = UserRoles.Admin)]
-        [HttpDelete("{id}")]
+        [HttpDelete("{id:int}")] // Y aquí
         public async Task<IActionResult> DeletePatient(int id)
         {
             try

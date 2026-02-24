@@ -2,23 +2,24 @@
 using DataAccess.Context;
 using DataAccess.Data;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace DataAccess.Repository
 {
     public class MedicoRepository
     {
         private const int DIAS_CALCULAR_FECHAS_COMPLETAS = 60;
-
-        #region ContextDataBase
         private readonly GestionTurnosContext _context;
 
         public MedicoRepository(GestionTurnosContext context)
         {
             _context = context;
         }
-        #endregion
 
-        // Eliminamos el using() y agregamos Task/await/ToListAsync
+        #region Consultas Básicas
         public async Task<List<Medico>> GetAllDoctors()
         {
             return await _context.Medicos.ToListAsync();
@@ -34,20 +35,32 @@ namespace DataAccess.Repository
             return _context;
         }
 
-        // Respetamos los dos parámetros que usas
-        public async Task<Medico> GetDoctorForId(int id, GestionTurnosContext _context)
+        public async Task<Medico> GetDoctorForId(int id, GestionTurnosContext contextRef = null)
         {
-            return await _context.Medicos.FindAsync(id);
+            var ctx = contextRef ?? _context;
+            return await ctx.Medicos.FindAsync(id);
         }
 
-        public async Task<List<HorarioMedico>> GetHorarioDoctorForId(int id)
+        public async Task<Medico> GetDoctorForDNI(string dni)
         {
-            return await _context.HorariosMedicos
-                .Where(h => h.MedicoId == id)
-                .OrderBy(h => h.DiaSemana)
-                .ToListAsync();
+            return await _context.Medicos.FirstOrDefaultAsync(m => m.Dni == dni);
+        }
+        #endregion
+
+        #region Validaciones de Existencia
+        // Este es el método que te faltaba y causaba el error en ValidationsMethodPost
+        public async Task<bool> VerifyIfDoctorExistReturnBool(int id)
+        {
+            return await _context.Medicos.AnyAsync(d => d.Id == id);
         }
 
+        public async Task<bool> VerifyIfDoctorExist(string nombre, string dni)
+        {
+            return await _context.Medicos.AnyAsync(d => d.Nombre == nombre && d.Dni == dni);
+        }
+        #endregion
+
+        #region Operaciones CRUD
         public async Task CreateDoctor(Medico oDoctor, List<HorarioMedico> horarios)
         {
             horarios.RemoveAll(h => h.HorarioAtencionInicio == null || h.HorarioAtencionFin == null);
@@ -67,33 +80,14 @@ namespace DataAccess.Repository
         {
             var horarios = await _context.HorariosMedicos.Where(h => h.MedicoId == oDoctor.Id).ToListAsync();
             _context.HorariosMedicos.RemoveRange(horarios);
+
             _context.Medicos.Remove(oDoctor);
             await _context.SaveChangesAsync();
         }
+        #endregion
 
-        public async Task<Medico> GetDoctorForDNI(string dni)
-        {
-            // Nota: Find() busca por PK. Si DNI no es PK, mejor usar FirstOrDefaultAsync
-            return await _context.Medicos.FirstOrDefaultAsync(m => m.Dni == dni);
-        }
-
-        public async Task<bool> VerifyIfDoctorExist(string nombre, string dni)
-        {
-            return await _context.Medicos.AnyAsync(d => d.Nombre == nombre && d.Dni == dni);
-        }
-
-        public async Task<List<Medico>> FindDoctorForSpecialty(int id)
-        {
-            // Eliminamos el using() que cerraba el contexto
-            return await _context.Medicos.Where(o => o.EspecialidadId == id).ToListAsync();
-        }
-
-        public async Task<bool> VerifyIfDoctorExistReturnBool(int id)
-        {
-            return await _context.Medicos.AnyAsync(d => d.Id == id);
-        }
-
-        public async Task<List<HorarioMedico>> ReturnHorariosForDoctor(int id)
+        #region Horarios y Especialidades
+        public async Task<List<HorarioMedico>> GetHorarioDoctorForId(int id)
         {
             return await _context.HorariosMedicos
                 .Where(h => h.MedicoId == id)
@@ -101,34 +95,39 @@ namespace DataAccess.Repository
                 .ToListAsync();
         }
 
+        public async Task<List<HorarioMedico>> ReturnHorariosForDoctor(int id)
+        {
+            return await GetHorarioDoctorForId(id);
+        }
+
+        public async Task<List<Medico>> FindDoctorForSpecialty(int id)
+        {
+            return await _context.Medicos.Where(o => o.EspecialidadId == id).ToListAsync();
+        }
+
         public async Task<List<MedicoCustom>> ReturnAllDoctorsWithOurSpecialty()
         {
-            var all_doctors = await (from m in _context.Medicos
-                                     join e in _context.Especialidades
-                                     on m.EspecialidadId equals e.Id
-                                     select new MedicoCustom
-                                     {
-                                         Id = m.Id,
-                                         Nombre = m.Nombre,
-                                         Apellido = m.Apellido,
-                                         Telefono = m.Telefono,
-                                         Dni = m.Dni,
-                                         Direccion = m.Direccion,
-                                         FechaAltaLaboral = m.FechaAltaLaboral,
-                                         Especialidad = e.Nombre,
-                                         Foto = m.Foto != null ? Convert.ToBase64String(m.Foto) : null,
-                                         Matricula = m.Matricula
-                                     }).ToListAsync();
-
-            foreach (var m in all_doctors)
-            {
-                m.Horarios = await _context.HorariosMedicos
-                    .Where(h => h.MedicoId == m.Id)
-                    .OrderBy(h => h.DiaSemana)
-                    .ToListAsync();
-            }
-
-            return all_doctors;
+            return await _context.Medicos
+                .Include(m => m.Horarios)
+                .Join(_context.Especialidades,
+                      m => m.EspecialidadId,
+                      e => e.Id,
+                      (m, e) => new MedicoCustom
+                      {
+                          Id = m.Id,
+                          Nombre = m.Nombre,
+                          Apellido = m.Apellido,
+                          Telefono = m.Telefono,
+                          Dni = m.Dni,
+                          Direccion = m.Direccion,
+                          FechaAltaLaboral = m.FechaAltaLaboral,
+                          Especialidad = e.Nombre,
+                          EspecialidadId = m.EspecialidadId,
+                          Foto = m.Foto != null ? Convert.ToBase64String(m.Foto) : null,
+                          Matricula = m.Matricula,
+                          Horarios = m.Horarios.OrderBy(h => h.DiaSemana).ToList()
+                      })
+                .ToListAsync();
         }
 
         public async Task<MedicoConEspecialidad> ReturnDoctorWithSpecialty(int id)
@@ -143,17 +142,19 @@ namespace DataAccess.Repository
                               Especialidad = e.Nombre
                           }).FirstAsync();
         }
+        #endregion
 
+        #region Lógica de Turnos
         public async Task<List<HorarioMedico>> GetHorariosForDoctor(int medicoId)
         {
-            return await _context.HorariosMedicos.Where(h => h.MedicoId == medicoId).ToListAsync();
+            return await _context.HorariosMedicos
+                .Where(h => h.MedicoId == medicoId)
+                .ToListAsync();
         }
 
         public async Task<List<DateTime>> GetTurnosOcupados(int medicoId)
         {
             const int DURACION_TURNO_MINUTOS = 60;
-
-            // Suponiendo que normalizaremos TurnoRepository después
             TurnoRepository tRepo = new(_context);
 
             var schedule = await GetHorariosForDoctor(medicoId);
@@ -170,7 +171,7 @@ namespace DataAccess.Repository
                 byte diaSemana = (byte)((int)fecha.DayOfWeek == 0 ? 7 : (int)fecha.DayOfWeek);
                 var horarioDia = schedule.FirstOrDefault(h => h.DiaSemana == diaSemana);
 
-                if (horarioDia == null || horarioDia.HorarioAtencionInicio == null || horarioDia.HorarioAtencionFin == null)
+                if (horarioDia?.HorarioAtencionInicio == null || horarioDia?.HorarioAtencionFin == null)
                     continue;
 
                 TimeSpan inicio = horarioDia.HorarioAtencionInicio.Value;
@@ -178,14 +179,14 @@ namespace DataAccess.Repository
 
                 int totalTurnos = (int)Math.Floor((fin - inicio).TotalMinutes / DURACION_TURNO_MINUTOS);
 
-                turnosPorDia.TryGetValue(fecha.Date, out var horas);
-                int ocupados = horas?.Count ?? 0;
-
-                if (ocupados >= totalTurnos)
-                    fechasOcupadas.Add(fecha.Date);
+                if (turnosPorDia.TryGetValue(fecha.Date, out var horas))
+                {
+                    if (horas.Count >= totalTurnos)
+                        fechasOcupadas.Add(fecha.Date);
+                }
             }
-
             return fechasOcupadas;
         }
+        #endregion
     }
 }

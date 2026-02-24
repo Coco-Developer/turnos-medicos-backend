@@ -4,8 +4,6 @@ using DataAccess.Data;
 using DataAccess.Repository;
 using Models.CustomModels;
 using System;
-using System.ComponentModel.DataAnnotations;
-using System.Text.RegularExpressions;
 using System.Linq;
 using DataAccess.Context;
 using System.Threading.Tasks;
@@ -20,126 +18,108 @@ namespace ApiGestionTurnosMedicos.Validations
         #region ContextDataBase
         private readonly GestionTurnosContext _context;
 
-        /// <summary>
-        /// Constructor que inicializa el contexto de la base de datos.
-        /// </summary>
         public ValidationsMethodPost(GestionTurnosContext context)
         {
             _context = context;
         }
         #endregion
 
-        /// <summary>
-        /// Indica si las validaciones fueron exitosas.
-        /// </summary>
         public bool IsValid { get; set; }
-
-        /// <summary>
-        /// Mensaje de error si las validaciones fallan.
-        /// </summary>
         public string ErrorMessage { get; set; }
 
-        /// <summary>
-        /// Constructor por defecto.
-        /// </summary>
-        public ValidationsMethodPost()
-        {
-        }
+        public ValidationsMethodPost() { }
 
         /// <summary>
-        /// Realiza validaciones para la creación de un médico en el sistema.
+        /// Realiza validaciones para la creación de un médico.
         /// </summary>
         public async Task<ValidationsMethodPost> ValidationsMethodPostDoctor(MedicoCustom oDoctor)
         {
+            // Protección contra objeto nulo (Evita Error 500)
+            if (oDoctor == null)
+                return new ValidationsMethodPost { IsValid = false, ErrorMessage = "Los datos del médico son requeridos." };
+
             MedicoRepository repoDoctor = new MedicoRepository(_context);
             EspecialidadRepository repSpecialty = new EspecialidadRepository(_context);
             AllValidations validations = new AllValidations();
 
             try
             {
-                #region Validaciones de existencia
-                // Agregado await porque tu repositorio devuelve Task<bool>
-                if (await repoDoctor.VerifyIfDoctorExist(oDoctor.Nombre, oDoctor.Dni))
-                    throw new ArgumentException("El Médico ya existe.");
-
-                if (!await repSpecialty.VerifyIfSpecialtyExistAsync(oDoctor.EspecialidadId))
-                    throw new ArgumentException("Especialidad no encontrada.");
-                #endregion
-
-                #region Validaciones de campo
-                if (!validations.EsStringNoVacio(oDoctor.Nombre))
+                #region Validaciones de campo (Null or WhiteSpace)
+                if (string.IsNullOrWhiteSpace(oDoctor.Nombre))
                     throw new ArgumentException("El Nombre no puede quedar vacío.");
-                if (!validations.EsStringNoVacio(oDoctor.Dni))
-                    throw new ArgumentException("EL DNI no puede quedar vacío.");
+
+                if (string.IsNullOrWhiteSpace(oDoctor.Apellido))
+                    throw new ArgumentException("El Apellido no puede quedar vacío.");
+
+                if (string.IsNullOrWhiteSpace(oDoctor.Dni))
+                    throw new ArgumentException("El DNI no puede quedar vacío.");
                 #endregion
 
-                #region Validaciones lógicas
+                #region Validaciones lógicas y formato
                 if (!validations.EsSoloLetras(oDoctor.Nombre))
                     throw new ArgumentException("El Nombre solo puede contener letras y espacios.");
+
                 if (!validations.EsSoloLetras(oDoctor.Apellido))
                     throw new ArgumentException("El Apellido solo puede contener letras y espacios.");
+
                 if (!validations.EsSoloNumeros(oDoctor.Dni))
                     throw new ArgumentException("El DNI solo puede contener números.");
-                if (!validations.EsSoloNumeros(oDoctor.Telefono))
+
+                if (!string.IsNullOrEmpty(oDoctor.Telefono) && !validations.EsSoloNumeros(oDoctor.Telefono))
                     throw new ArgumentException("El Teléfono solo puede contener números.");
 
                 if (oDoctor.FechaAltaLaboral > DateTime.Now)
                     throw new ArgumentException("La Fecha de Alta Laboral no puede ser en el futuro.");
 
-                if (oDoctor.EspecialidadId == 0)
-                    throw new ArgumentException("El ID de la Especialidad no puede ser cero.");
+                if (oDoctor.EspecialidadId <= 0)
+                    throw new ArgumentException("Debe seleccionar una Especialidad válida.");
+                #endregion
+
+                #region Validaciones de existencia en Base de Datos
+                // Await necesario para métodos asíncronos del repositorio
+                if (await repoDoctor.VerifyIfDoctorExist(oDoctor.Nombre, oDoctor.Dni))
+                    throw new ArgumentException("El Médico ya se encuentra registrado en el sistema.");
+
+                if (!await repSpecialty.VerifyIfSpecialtyExistAsync(oDoctor.EspecialidadId))
+                    throw new ArgumentException("La Especialidad seleccionada no existe.");
                 #endregion
 
                 return new ValidationsMethodPost { IsValid = true };
             }
             catch (Exception e)
             {
+                // Captura el mensaje exacto del throw
                 return new ValidationsMethodPost { IsValid = false, ErrorMessage = e.Message };
             }
         }
 
         /// <summary>
-        /// Realiza validaciones para la creación de un paciente en el sistema.
+        /// Realiza validaciones para la creación de un paciente.
         /// </summary>
         public async Task<ValidationsMethodPost> ValidationsMethodPostPatient(Paciente oPatient)
         {
+            if (oPatient == null)
+                return new ValidationsMethodPost { IsValid = false, ErrorMessage = "Los datos del paciente son requeridos." };
+
             AllValidations validations = new AllValidations();
             PacienteRepository repoPatient = new PacienteRepository(_context);
 
             try
             {
-                #region Validaciones de existencia
+                if (string.IsNullOrWhiteSpace(oPatient.Nombre))
+                    throw new ArgumentException("El Nombre no puede quedar vacío.");
+
+                if (string.IsNullOrWhiteSpace(oPatient.Email))
+                    throw new ArgumentException("El Email no puede quedar vacío.");
+
+                if (!validations.EsFormatoEmailValido(oPatient.Email))
+                    throw new ArgumentException("El formato del Email no es válido.");
+
                 if (await repoPatient.VerifyIfPatientExistAsync(oPatient.Nombre, oPatient.Dni))
                     throw new ArgumentException("El paciente ya existe.");
-                #endregion
 
-                #region Validaciones de campo
-                if (!validations.EsStringNoVacio(oPatient.Nombre))
-                    throw new ArgumentException("El Nombre no puede quedar vacío.");
-                if (!validations.EsStringNoVacio(oPatient.Apellido))
-                    throw new ArgumentException("El Apellido no puede quedar vacío");
-                if (!validations.EsStringNoVacio(oPatient.FechaNacimiento.ToString()))
-                    throw new ArgumentException("La Fecha de Nacimiento no puede quedar vacía.");
-                if (!validations.EsStringNoVacio(oPatient.Email))
-                    throw new ArgumentException("El Email no puede quedar vacío.");
-                if (!validations.EsStringNoVacio(oPatient.Telefono))
-                    throw new ArgumentException("El Teléfono no puede quedar vacío.");
-                #endregion
-
-                #region Validaciones lógicas
-                if (!validations.EsFormatoEmailValido(oPatient.Email))
-                    throw new ArgumentException("El Email no tiene un formato válido.");
-                if (!validations.EsSoloLetras(oPatient.Nombre))
-                    throw new ArgumentException("El Nombre solo puede contener letras y espacios.");
-                if (!validations.EsSoloLetras(oPatient.Apellido))
-                    throw new ArgumentException("El Apellido solo puede contener letras y espacios.");
-                if (!int.TryParse(oPatient.Dni.ToString(), out _))
-                    throw new ArgumentException("El DNI solo puede contener números.");
-                if (!validations.EsSoloNumeros(oPatient.Telefono))
-                    throw new ArgumentException("El Teléfono solo puede contener números.");
                 if (!validations.EsFechaNacimientoValida(oPatient.FechaNacimiento))
                     throw new ArgumentException("La Fecha de Nacimiento no puede ser en el futuro.");
-                #endregion
 
                 return new ValidationsMethodPost { IsValid = true };
             }
@@ -150,10 +130,13 @@ namespace ApiGestionTurnosMedicos.Validations
         }
 
         /// <summary>
-        /// Realiza validaciones para la creación de un turno en el sistema.
+        /// Realiza validaciones para la creación de un turno.
         /// </summary>
         public async Task<ValidationsMethodPost> ValidationsMethodPostShift(TurnoCustom turno)
         {
+            if (turno == null)
+                return new ValidationsMethodPost { IsValid = false, ErrorMessage = "Los datos del turno son requeridos." };
+
             try
             {
                 AllValidations validations = new AllValidations();
@@ -161,38 +144,36 @@ namespace ApiGestionTurnosMedicos.Validations
                 PacienteRepository repoPatient = new PacienteRepository(_context);
                 TurnoRepository repoShift = new TurnoRepository(_context);
 
-                #region Validaciones de existencia
-                // Corregido con await
+                #region Validaciones de existencia de IDs
+                if (turno.MedicoId <= 0) throw new ArgumentException("Debe elegir un médico.");
+                if (turno.PacienteId <= 0) throw new ArgumentException("Debe elegir un paciente.");
+
                 if (!await repoDoctor.VerifyIfDoctorExistReturnBool(turno.MedicoId))
-                    throw new ArgumentException("El médico seleccionado no existe");
+                    throw new ArgumentException("El médico seleccionado no existe.");
 
                 if (!await repoPatient.VerifyIfPatientExistByIdAsync(turno.PacienteId))
-                    throw new ArgumentException("El paciente seleccionado no existe");
+                    throw new ArgumentException("El paciente seleccionado no existe.");
                 #endregion
 
-                #region Validaciones de campo
-                if (!validations.EsStringNoVacio(turno.Fecha.ToString()))
-                    throw new ArgumentException("Debe elegir una fecha para su turno");
-                if (!validations.EsStringNoVacio(turno.Hora.ToString()))
-                    throw new ArgumentException("Debe elegir una hora para su turno");
-                if (!validations.EsStringNoVacio(turno.MedicoId.ToString()))
-                    throw new ArgumentException("Debe elegir un médico");
-                if (!validations.EsStringNoVacio(turno.PacienteId.ToString()))
-                    throw new ArgumentException("Debe elegir un paciente para el turno");
-                #endregion
+                #region Validaciones de Fecha y Disponibilidad
+                if (string.IsNullOrWhiteSpace(turno.Fecha) || string.IsNullOrWhiteSpace(turno.Hora))
+                    throw new ArgumentException("La fecha y la hora son obligatorias.");
 
-                #region Validaciones lógicas
-                DateTime fechaTurno = DateTime.Parse(turno.Fecha);
-                TimeSpan horaTurno = TimeSpan.Parse(turno.Hora);
-                DateTime fechaYHoraTurno = fechaTurno.Add(horaTurno);
+                if (!DateTime.TryParse(turno.Fecha, out DateTime fechaParsed))
+                    throw new ArgumentException("Formato de fecha no válido.");
+
+                if (!TimeSpan.TryParse(turno.Hora, out TimeSpan horaParsed))
+                    throw new ArgumentException("Formato de hora no válido.");
+
+                DateTime fechaYHoraTurno = fechaParsed.Add(horaParsed);
 
                 if (fechaYHoraTurno < DateTime.Now)
-                    throw new ArgumentException("La fecha y hora del turno no pueden ser en el pasado");
+                    throw new ArgumentException("No se pueden agendar turnos en el pasado.");
 
-                // Corregido con await
-                if (await repoShift.VerifyIfShiftExist(turno.MedicoId, fechaTurno, horaTurno, turno.Id))
+                // Verificación de choque de horarios
+                if (await repoShift.VerifyIfShiftExist(turno.MedicoId, fechaParsed, horaParsed, turno.Id))
                 {
-                    throw new ArgumentException("El turno solicitado ya está ocupado");
+                    throw new ArgumentException("El turno solicitado ya está ocupado por otro paciente.");
                 }
                 #endregion
 

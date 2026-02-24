@@ -12,64 +12,66 @@ namespace BusinessLogic.AppLogic
 {
     public class MedicoLogic
     {
-        #region ContextDataBase
+        #region Context and Repository
         private readonly GestionTurnosContext _context;
+        private readonly MedicoRepository _repDoctor;
 
         public MedicoLogic(GestionTurnosContext context)
         {
             _context = context;
+            // Centralizamos el repositorio para evitar múltiples instancias innecesarias
+            _repDoctor = new MedicoRepository(_context);
         }
         #endregion
 
         public async Task<List<Medico>> DoctorList()
         {
-            MedicoRepository repDoctor = new(_context);
-            return await repDoctor.GetAllDoctors();
+            return await _repDoctor.GetAllDoctors();
         }
 
         public async Task<Medico> GetDoctorForId(int id)
         {
             try
             {
-                MedicoRepository repDoctor = new(_context);
-                // Mantenemos tu firma original pasando el contexto
-                Medico oDoctorFound = await repDoctor.GetDoctorForId(id, _context) ?? throw new ArgumentException("No doctor was found with that id");
+                // Buscamos el médico usando el repositorio
+                Medico oDoctorFound = await _repDoctor.GetDoctorForId(id, _context)
+                    ?? throw new ArgumentException($"No se encontró un médico con el ID: {id}");
 
-                // Obtener y asignar los horarios
-                oDoctorFound.Horarios = await repDoctor.GetHorarioDoctorForId(id);
+                // Obtenemos y asignamos los horarios
+                oDoctorFound.Horarios = await _repDoctor.GetHorarioDoctorForId(id);
                 return oDoctorFound;
             }
             catch (Exception e)
             {
-                Console.WriteLine($"Processing failed: {e.Message}");
+                Console.WriteLine($"Error en GetDoctorForId: {e.Message}");
                 throw;
             }
         }
 
         public async Task CreateDoctor(Medico oDoctor, List<HorarioMedico> horarios)
         {
-            MedicoRepository repDoctor = new(_context);
-
             try
             {
-                await repDoctor.CreateDoctor(oDoctor, horarios);
+                // Nos aseguramos de que horarios no sea nulo para evitar errores en el bucle del repositorio
+                var listaHorarios = horarios ?? new List<HorarioMedico>();
+                await _repDoctor.CreateDoctor(oDoctor, listaHorarios);
             }
             catch (Exception e)
             {
-                Console.WriteLine(e.ToString());
+                Console.WriteLine($"Error en CreateDoctor: {e.ToString()}");
                 throw;
             }
         }
 
         public async Task UpdateDoctor(int id, MedicoCustom oDoctor)
         {
-            MedicoRepository repDoctor = new(_context);
-
             try
             {
-                // Mantenemos Get_context() tal como estaba en tu código
-                Medico oDoctorFound = await repDoctor.GetDoctorForId(id, repDoctor.Get_context()) ?? throw new ArgumentException("No doctor was found with that id");
+                // Obtenemos el médico actual desde la DB
+                Medico oDoctorFound = await _repDoctor.GetDoctorForId(id, _context)
+                    ?? throw new ArgumentException("No se encontró el médico para actualizar");
 
+                // Actualización de campos básicos
                 oDoctorFound.Nombre = oDoctor.Nombre;
                 oDoctorFound.Apellido = oDoctor.Apellido;
                 oDoctorFound.Dni = oDoctor.Dni;
@@ -77,131 +79,145 @@ namespace BusinessLogic.AppLogic
                 oDoctorFound.Direccion = oDoctor.Direccion;
                 oDoctorFound.EspecialidadId = oDoctor.EspecialidadId;
                 oDoctorFound.FechaAltaLaboral = oDoctor.FechaAltaLaboral;
-
-                oDoctorFound.Foto = string.IsNullOrEmpty(oDoctor.Foto) ? oDoctorFound.Foto : Convert.FromBase64String(oDoctor.Foto);
                 oDoctorFound.Matricula = oDoctor.Matricula;
 
-                foreach (var horario in oDoctor.Horarios)
+                // Procesamiento seguro de la foto (Base64)
+                if (!string.IsNullOrWhiteSpace(oDoctor.Foto))
                 {
-                    // Cambiamos a FirstOrDefaultAsync para no bloquear el hilo
-                    var horarioExistente = await _context.HorariosMedicos
-                        .FirstOrDefaultAsync(h => h.DiaSemana == horario.DiaSemana && h.MedicoId == oDoctorFound.Id);
-
-                    if (horario.HorarioAtencionInicio == null || horario.HorarioAtencionFin == null)
+                    try
                     {
-                        if (horarioExistente != null)
-                        {
-                            _context.HorariosMedicos.Remove(horarioExistente);
-                        }
-                        continue;
+                        oDoctorFound.Foto = Convert.FromBase64String(oDoctor.Foto);
                     }
-
-                    if (horarioExistente != null)
+                    catch
                     {
-                        horarioExistente.HorarioAtencionInicio = horario.HorarioAtencionInicio;
-                        horarioExistente.HorarioAtencionFin = horario.HorarioAtencionFin;
-                    }
-                    else
-                    {
-                        horario.Id = 0;
-                        horario.MedicoId = oDoctorFound.Id;
-                        await _context.HorariosMedicos.AddAsync(horario);
+                        // Si el formato es inválido, mantenemos la foto anterior o null
+                        Console.WriteLine("Advertencia: El formato de imagen Base64 no es válido.");
                     }
                 }
 
-                await repDoctor.UpdateDoctor(oDoctorFound);
+                // Gestión de Horarios
+                if (oDoctor.Horarios != null)
+                {
+                    foreach (var horario in oDoctor.Horarios)
+                    {
+                        var horarioExistente = await _context.HorariosMedicos
+                            .FirstOrDefaultAsync(h => h.DiaSemana == horario.DiaSemana && h.MedicoId == oDoctorFound.Id);
+
+                        // Si el horario viene sin horas, se interpreta como eliminación
+                        if (horario.HorarioAtencionInicio == null || horario.HorarioAtencionFin == null)
+                        {
+                            if (horarioExistente != null)
+                            {
+                                _context.HorariosMedicos.Remove(horarioExistente);
+                            }
+                            continue;
+                        }
+
+                        if (horarioExistente != null)
+                        {
+                            horarioExistente.HorarioAtencionInicio = horario.HorarioAtencionInicio;
+                            horarioExistente.HorarioAtencionFin = horario.HorarioAtencionFin;
+                        }
+                        else
+                        {
+                            horario.Id = 0; // Aseguramos que sea una inserción nueva
+                            horario.MedicoId = oDoctorFound.Id;
+                            await _context.HorariosMedicos.AddAsync(horario);
+                        }
+                    }
+                }
+
+                // Guardamos los cambios a través del repositorio
+                await _repDoctor.UpdateDoctor(oDoctorFound);
             }
             catch (Exception e)
             {
-                Console.WriteLine(e.ToString());
+                Console.WriteLine($"Error en UpdateDoctor: {e.ToString()}");
                 throw;
             }
         }
 
         public async Task DeleteDoctor(int id)
         {
-            MedicoRepository repDoctor = new(_context);
-
             try
             {
-                Medico oDoctorFound = await repDoctor.GetDoctorForId(id, repDoctor.Get_context()) ?? throw new ArgumentException("No doctor was found with that id");
-                await repDoctor.DeleteDoctor(oDoctorFound);
+                Medico oDoctorFound = await _repDoctor.GetDoctorForId(id, _context)
+                    ?? throw new ArgumentException("No se encontró el médico para eliminar");
+
+                await _repDoctor.DeleteDoctor(oDoctorFound);
             }
             catch (Exception e)
             {
-                Console.WriteLine(e.ToString());
+                Console.WriteLine($"Error en DeleteDoctor: {e.ToString()}");
                 throw;
             }
         }
 
         public async Task<List<Medico>> FindDoctorForSpecialty(int id)
         {
-            MedicoRepository repDoctor = new(_context);
-
-            if (id == 0)
-            {
-                throw new ArgumentException("The id can't be 0");
-            }
+            if (id <= 0) throw new ArgumentException("El ID de especialidad debe ser mayor a 0");
 
             try
             {
-                return await repDoctor.FindDoctorForSpecialty(id);
+                return await _repDoctor.FindDoctorForSpecialty(id);
             }
             catch (Exception e)
             {
-                Console.WriteLine(e.ToString());
+                Console.WriteLine($"Error en FindDoctorForSpecialty: {e.ToString()}");
                 throw;
             }
         }
 
         public async Task<List<MedicoCustom>> ReturnAllDoctorsWithOurSpecialty()
         {
-            MedicoRepository repDoctor = new(_context);
-
             try
             {
-                return await repDoctor.ReturnAllDoctorsWithOurSpecialty();
+                return await _repDoctor.ReturnAllDoctorsWithOurSpecialty();
             }
             catch (Exception e)
             {
-                Console.WriteLine(e.ToString());
+                Console.WriteLine($"Error en ReturnAllDoctorsWithOurSpecialty: {e.ToString()}");
                 throw;
             }
         }
 
         public async Task<int> GetDoctorsQty()
         {
-            MedicoRepository repDoctor = new(_context);
-
             try
             {
-                return await repDoctor.GetQtyDoctors();
+                return await _repDoctor.GetQtyDoctors();
             }
             catch (Exception e)
             {
-                Console.WriteLine(e.ToString());
+                Console.WriteLine($"Error en GetDoctorsQty: {e.ToString()}");
                 throw;
             }
         }
 
         public async Task<List<HorarioMedico>> GetScheduleForDoctor(int id)
         {
-            MedicoRepository repDoctor = new(_context);
             try
             {
-                return await repDoctor.GetHorariosForDoctor(id);
+                return await _repDoctor.GetHorariosForDoctor(id);
             }
             catch (Exception e)
             {
-                Console.WriteLine(e.ToString());
+                Console.WriteLine($"Error en GetScheduleForDoctor: {e.ToString()}");
                 throw;
             }
         }
 
         public async Task<List<DateTime>> GetFullScheduleForDoctor(int id)
         {
-            MedicoRepository repDoctor = new(_context);
-            return await repDoctor.GetTurnosOcupados(id);
+            try
+            {
+                return await _repDoctor.GetTurnosOcupados(id);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"Error en GetFullScheduleForDoctor: {e.Message}");
+                throw;
+            }
         }
     }
 }
