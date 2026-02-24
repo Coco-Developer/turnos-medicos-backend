@@ -13,4 +13,6 @@ public partial class Medico
     public virtual ICollection<HorarioMedico> Horarios { get; set; } = new List<HorarioMedico>();
     public byte[]? Foto { get; set; }
     public string? Matricula { get; set; }
+    public TimeSpan HorarioAtencionInicio { get; set; } // Agregado para Azure
+    public TimeSpan HorarioAtencionFin { get; set; }    // Agregado para Azure
 }

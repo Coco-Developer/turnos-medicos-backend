@@ -94,7 +94,12 @@ namespace ApiGestionTurnosMedicos.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creando médico");
-                return StatusCode(500, "Error interno al crear médico");
+                return StatusCode(500, new
+                {
+                    error = ex.Message,
+                    inner = ex.InnerException?.Message,
+                    stack = ex.StackTrace
+                });
             }
         }
 

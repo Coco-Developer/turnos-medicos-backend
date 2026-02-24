@@ -2,6 +2,10 @@
 using DataAccess.Repository;
 using Microsoft.Extensions.Logging;
 using Models.CustomModels;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace BusinessLogic.AppLogic
 {
@@ -69,6 +73,9 @@ namespace BusinessLogic.AppLogic
 
         public async Task CreateDoctor(MedicoCustom dto)
         {
+            // 1. Buscamos el primer horario para cumplir con las columnas NOT NULL de la tabla Medico en Azure
+            var primerHorario = dto.Horarios?.FirstOrDefault();
+
             var medico = new Medico
             {
                 Nombre = dto.Nombre,
@@ -78,28 +85,42 @@ namespace BusinessLogic.AppLogic
                 Direccion = dto.Direccion,
                 Dni = dto.Dni,
                 Telefono = dto.Telefono,
-                Matricula = dto.Matricula
+                Matricula = dto.Matricula,
+
+                // Usamos .GetValueOrDefault para asegurar que no falle la conversión de TimeSpan? a TimeSpan
+                HorarioAtencionInicio = primerHorario != null
+                    ? primerHorario.HorarioAtencionInicio.GetValueOrDefault(new TimeSpan(8, 0, 0))
+                    : new TimeSpan(8, 0, 0),
+                HorarioAtencionFin = primerHorario != null
+                    ? primerHorario.HorarioAtencionFin.GetValueOrDefault(new TimeSpan(17, 0, 0))
+                    : new TimeSpan(17, 0, 0)
             };
 
+            // 2. Procesar Foto (Limpiando el prefijo Base64 si existe)
             if (!string.IsNullOrWhiteSpace(dto.Foto))
             {
                 try
                 {
-                    medico.Foto = Convert.FromBase64String(dto.Foto);
+                    string base64Data = dto.Foto.Contains(",") ? dto.Foto.Split(',')[1] : dto.Foto;
+                    medico.Foto = Convert.FromBase64String(base64Data);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    _logger.LogWarning("Imagen Base64 inválida en CreateDoctor");
+                    _logger.LogWarning(ex, "Imagen Base64 inválida en CreateDoctor");
+                    medico.Foto = null;
                 }
             }
 
+            // 3. Mapeo de la lista de detalles (Relación 1:N) para la tabla HorarioMedico
             var horarios = dto.Horarios?.Select(h => new HorarioMedico
             {
                 DiaSemana = h.DiaSemana,
-                HorarioAtencionInicio = h.HorarioAtencionInicio,
-                HorarioAtencionFin = h.HorarioAtencionFin
+                // Aseguramos que no sean nulos para la base de datos
+                HorarioAtencionInicio = h.HorarioAtencionInicio.GetValueOrDefault(new TimeSpan(8, 0, 0)),
+                HorarioAtencionFin = h.HorarioAtencionFin.GetValueOrDefault(new TimeSpan(17, 0, 0))
             }).ToList() ?? new List<HorarioMedico>();
 
+            // 4. Persistencia
             await _repDoctor.CreateDoctor(medico, horarios);
         }
 
@@ -123,11 +144,12 @@ namespace BusinessLogic.AppLogic
             {
                 try
                 {
-                    doctor.Foto = Convert.FromBase64String(dto.Foto);
+                    string base64Data = dto.Foto.Contains(",") ? dto.Foto.Split(',')[1] : dto.Foto;
+                    doctor.Foto = Convert.FromBase64String(base64Data);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    _logger.LogWarning("Imagen Base64 inválida en UpdateDoctor");
+                    _logger.LogWarning(ex, "Imagen Base64 inválida en UpdateDoctor");
                 }
             }
 
