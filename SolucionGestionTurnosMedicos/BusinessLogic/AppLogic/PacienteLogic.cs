@@ -51,39 +51,50 @@ namespace BusinessLogic.AppLogic
         // Crear Paciente y Usuario asociado (Transaccional)
         public async Task CreatePatientWithUserAsync(Paciente oPatient, string password)
         {
+            if (oPatient == null)
+                throw new ArgumentException("Datos del paciente inválidos.");
+
+            if (string.IsNullOrWhiteSpace(password))
+                throw new ArgumentException("La contraseña es obligatoria.");
+
+            if (string.IsNullOrWhiteSpace(oPatient.Dni))
+                throw new ArgumentException("El DNI es obligatorio.");
+
             using var transaction = await _context.Database.BeginTransactionAsync();
+
             try
             {
-                // 1. Validar si el usuario ya existe por DNI (Username)
-                bool userExists = await _context.Usuario.AnyAsync(u => u.Username == oPatient.Dni.ToString());
-                if (userExists) throw new Exception("El DNI ya se encuentra registrado.");
+                bool userExists = await _context.Usuario
+                    .AnyAsync(u => u.Username == oPatient.Dni);
 
-                // 2. Crear el Usuario
-                var passwordHasher = new PasswordHasher<Usuario>();
+                if (userExists)
+                    throw new Exception("El DNI ya se encuentra registrado.");
+
                 var user = new Usuario
                 {
-                    Username = oPatient.Dni.ToString(),
+                    Username = oPatient.Dni,
                     Rol = UserRoles.Paciente,
-                    Email = oPatient.Email,
+                    Email = oPatient.Email ?? "",
                     IsActive = true
                 };
+
+                var passwordHasher = new PasswordHasher<Usuario>();
                 user.PasswordHash = passwordHasher.HashPassword(user, password);
 
                 _context.Usuario.Add(user);
                 await _context.SaveChangesAsync();
 
-                // 3. Crear el Paciente vinculado al Usuario
                 oPatient.UsuarioId = user.Id;
+
                 _context.Pacientes.Add(oPatient);
                 await _context.SaveChangesAsync();
 
-                // 4. Confirmar cambios en la DB
                 await transaction.CommitAsync();
             }
-            catch (Exception ex)
+            catch
             {
                 await transaction.RollbackAsync();
-                throw new Exception(ex.Message);
+                throw;
             }
         }
 

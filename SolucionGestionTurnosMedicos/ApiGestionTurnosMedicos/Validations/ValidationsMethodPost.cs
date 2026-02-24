@@ -2,7 +2,6 @@
 using BusinessLogic;
 using DataAccess.Data;
 using DataAccess.Repository;
-using Models.CustomModels;
 using System;
 using System.Linq;
 using DataAccess.Context;
@@ -20,7 +19,7 @@ namespace ApiGestionTurnosMedicos.Validations
 
         public ValidationsMethodPost(GestionTurnosContext context)
         {
-            _context = context;
+            _context = context ?? throw new ArgumentNullException(nameof(context));
         }
         #endregion
 

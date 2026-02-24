@@ -148,8 +148,6 @@ namespace DataAccess.Context
 
                 entity.HasIndex(e => new { e.Apellido, e.Nombre }, "IX_Paciente_ApeNom");
 
-                entity.HasOne(p => p.Usuario);
-
                 entity.Property(e => e.Id).HasColumnName("id");
 
                 entity.Property(e => e.Apellido)
@@ -181,8 +179,14 @@ namespace DataAccess.Context
                     .IsUnicode(false)
                     .HasColumnName("telefono");
 
-                entity.Property(e => e.UsuarioId).HasColumnName("usuarioid");
+                entity.Property(e => e.UsuarioId)
+                    .HasColumnName("usuarioid");
 
+                // 👇 RELACIÓN CORRECTA
+                entity.HasOne(p => p.Usuario)
+                    .WithMany()
+                    .HasForeignKey(p => p.UsuarioId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<Turno>(entity =>
