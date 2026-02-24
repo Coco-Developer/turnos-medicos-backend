@@ -60,10 +60,7 @@ namespace ApiGestionTurnosMedicos.Controllers
         {
             try
             {
-                // Ejemplo de cómo integrar validaciones si las tuvieras para Especialidad:
-                // var validations = new ValidationsMethodPost(_context);
-                // var validationResult = await validations.ValidationsMethodPostSpecialty(oEspecialidad);
-                // if (!validationResult.IsValid) return BadRequest(new { message = validationResult.ErrorMessage });
+        
 
                 await _eLogic.CreateSpecialtyAsync(oEspecialidad);
                 _logger.LogInformation("Especialidad creada: {Nombre}", oEspecialidad.Nombre);

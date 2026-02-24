@@ -1,6 +1,5 @@
 ﻿using Models.CustomModels;
 using BusinessLogic.AppLogic.Services;
-using DataAccess.Context;
 using DataAccess.Data;
 using DataAccess.Repository;
 using System.Data;
@@ -9,202 +8,179 @@ namespace BusinessLogic.AppLogic
 {
     public class TurnoLogic
     {
-        #region ContextDataBase
-        private readonly GestionTurnosContext _context;
+        private readonly TurnoRepository _turnoRepository;
+        private readonly MedicoRepository _medicoRepository;
+        private readonly PacienteRepository _pacienteRepository;
+        private readonly EmailService _emailService;
 
-        public TurnoLogic(GestionTurnosContext context)
+        public TurnoLogic(
+            TurnoRepository turnoRepository,
+            MedicoRepository medicoRepository,
+            PacienteRepository pacienteRepository,
+            EmailService emailService)
         {
-            _context = context;
+            _turnoRepository = turnoRepository;
+            _medicoRepository = medicoRepository;
+            _pacienteRepository = pacienteRepository;
+            _emailService = emailService;
         }
-        #endregion
+
+        // ================= GET ALL =================
 
         public async Task<List<VwTurno>> ShiftList()
         {
-            TurnoRepository repShift = new TurnoRepository(_context);
-            return await repShift.GetAllShift();
+            return await _turnoRepository.GetAllShift();
         }
+
+        // ================= GET BY ID =================
 
         public async Task<VwTurno> GetShiftForId(int id)
         {
-            if (id == 0) throw new ArgumentException("Id cannot be 0");
+            if (id <= 0)
+                throw new ArgumentException("Id inválido");
 
-            try
-            {
-                TurnoRepository repShift = new TurnoRepository(_context);
-                VwTurno oShiftFound = await repShift.GetDisplayShiftById(id) ?? throw new ArgumentException("No shift was found with that id");
-                return oShiftFound;
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Processing failed: {e.Message}");
-                throw;
-            }
+            return await _turnoRepository.GetDisplayShiftById(id)
+                   ?? throw new ArgumentException("No se encontró el turno");
         }
 
-        public async Task CreateShift(Turno oShift)
+        // ================= CREATE =================
+
+        public async Task CreateShift(Turno shift)
         {
-            #region Validations
-            if (string.IsNullOrEmpty(oShift.Observaciones) || oShift.Observaciones == "string")
-            {
-                oShift.Observaciones = "N/D";
-            }
-            #endregion
+            if (shift == null)
+                throw new ArgumentNullException(nameof(shift));
 
-            TurnoRepository repShift = new(_context);
-            MedicoRepository repDoctor = new(_context);
-            PacienteRepository repPatient = new(_context);
+            if (string.IsNullOrWhiteSpace(shift.Observaciones) || shift.Observaciones == "string")
+                shift.Observaciones = "N/D";
 
-            // Obtenemos los datos necesarios para el mail (se asume que estos métodos en Repo serán asíncronos)
-            Paciente patient = await repPatient.GetPatientForId(oShift.PacienteId);
-            MedicoConEspecialidad Odoctor = await repDoctor.ReturnDoctorWithSpecialty(oShift.MedicoId);
+            var patient = await _pacienteRepository.GetPatientForId(shift.PacienteId)
+                          ?? throw new ArgumentException("Paciente no encontrado");
 
-            await repShift.CreateShift(oShift);
+            var doctor = await _medicoRepository.ReturnDoctorWithSpecialty(shift.MedicoId)
+                         ?? throw new ArgumentException("Médico no encontrado");
 
-            // Envío de email (Se mantiene síncrono según tu implementación de EmailService)
-            var emailService = new EmailService(new SmtpEmailSender());
-            emailService.SendShiftConfirmationEmail(oShift, patient, Odoctor);
+            await _turnoRepository.CreateShift(shift);
+
+            _emailService.SendShiftConfirmationEmail(shift, patient, doctor);
         }
 
-        public async Task UpdateShift(int id, Turno oShift)
+        // ================= UPDATE =================
+
+        public async Task UpdateShift(int id, Turno shift)
         {
-            TurnoRepository repShift = new(_context);
+            if (id <= 0)
+                throw new ArgumentException("Id inválido");
 
-            try
-            {
-                Turno oShiftFound = await repShift.GetShiftById(id) ?? throw new ArgumentException("No Shift was found with that id");
-                oShiftFound.Hora = oShift.Hora;
-                oShiftFound.Fecha = oShift.Fecha;
-                oShiftFound.Observaciones = oShift.Observaciones;
+            var shiftFound = await _turnoRepository.GetShiftById(id)
+                             ?? throw new ArgumentException("Turno no encontrado");
 
-                await repShift.UpdateShift(oShiftFound);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Processing failed: {e.Message}");
-                throw;
-            }
+            shiftFound.Hora = shift.Hora;
+            shiftFound.Fecha = shift.Fecha;
+            shiftFound.Observaciones = shift.Observaciones;
+            shiftFound.MedicoId = shift.MedicoId;
+            shiftFound.PacienteId = shift.PacienteId;
+            shiftFound.EstadoId = shift.EstadoId;
+
+            await _turnoRepository.UpdateShift(shiftFound);
         }
+
+        // ================= UPDATE STATUS =================
 
         public async Task UpdateShiftStatus(int id, int status, int updateSource)
         {
-            TurnoRepository repShift = new(_context);
+            var shiftFound = await _turnoRepository.GetShiftById(id)
+                             ?? throw new ArgumentException("Turno no encontrado");
 
-            try
-            {
-                Turno oShiftFound = await repShift.GetShiftById(id) ?? throw new ArgumentException("No Shift was found with that id");
+            if (updateSource == 1)
+                shiftFound.Observaciones = "Autogestión Paciente (App Móvil)";
 
-                if (updateSource == 1) // Cambio de estado desde la aplicación móvil
-                {
-                    oShiftFound.Observaciones = "Autogestión Paciente (App Movil)";
-                }
+            shiftFound.EstadoId = status;
 
-                oShiftFound.EstadoId = status;
-                await repShift.UpdateShift(oShiftFound);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Processing failed: {e.Message}");
-                throw;
-            }
+            await _turnoRepository.UpdateShift(shiftFound);
         }
+
+        // ================= DELETE =================
 
         public async Task DeleteShift(int id)
         {
-            TurnoRepository repShift = new TurnoRepository(_context);
+            var shiftFound = await _turnoRepository.GetShiftById(id)
+                             ?? throw new ArgumentException("Turno no encontrado");
 
-            try
-            {
-                Turno oShiftFound = await repShift.GetShiftById(id) ?? throw new ArgumentException("No shift was found with that id");
-                await repShift.DeleteShift(oShiftFound);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Processing failed: {e.Message}");
-                throw;
-            }
+            await _turnoRepository.DeleteShift(shiftFound);
         }
+
+        // ================= LISTS =================
 
         public async Task<List<HorarioTurnos>> ListOfShiftsGroupedByDay(int idDoctor)
         {
-            TurnoRepository repoTurno = new(_context);
-            return await repoTurno.ListOfShiftsGroupedByDay(idDoctor);
+            return await _turnoRepository.ListOfShiftsGroupedByDay(idDoctor);
         }
 
         public async Task<List<VwTurno>> ListOfShiftsOfDate(DateTime fecha)
         {
-            TurnoRepository repoTurno = new(_context);
-            return await repoTurno.GetShiftsOfDate(fecha);
+            return await _turnoRepository.GetShiftsOfDate(fecha);
         }
 
         public async Task<List<DateTime>> ListOfDatesWithShiftsOfMonth(int mes)
         {
-            TurnoRepository repoTurno = new(_context);
-            return await repoTurno.GetDatesWithShiftsOfMonth(mes);
+            return await _turnoRepository.GetDatesWithShiftsOfMonth(mes);
         }
 
         public async Task<TurnosPaciente> ListOfShiftsByPatient(int idPaciente)
         {
-            TurnoRepository repoTurno = new(_context);
-            return await repoTurno.GetShiftsByPatient(idPaciente);
+            return await _turnoRepository.GetShiftsByPatient(idPaciente);
         }
 
         public async Task<List<VwTurno>> ListOfShiftsByPatientVw(int idPaciente)
         {
-            TurnoRepository repoTurno = new(_context);
-            return await repoTurno.GetShiftsByPatientVw(idPaciente);
+            return await _turnoRepository.GetShiftsByPatientVw(idPaciente);
         }
 
         public async Task<List<Turno>> ListOfShiftsByDoctor(int idMedico)
         {
-            TurnoRepository repoTurno = new(_context);
-            return await repoTurno.GetShiftsByDoctor(idMedico);
+            return await _turnoRepository.GetShiftsByDoctor(idMedico);
         }
+
+        // ================= DASHBOARD =================
 
         public async Task<List<VwTurnoCount>> ListOfShiftQtyCurrentYear()
         {
-            TurnoRepository repShift = new(_context);
-            return await repShift.GetQtyShiftYear();
+            return await _turnoRepository.GetQtyShiftYear();
         }
 
         public async Task<List<VwTurnoCount>> ListOfShiftQtyCurrentMonth()
         {
-            TurnoRepository repShift = new TurnoRepository(_context);
-            return await repShift.GetQtyShiftMonth();
+            return await _turnoRepository.GetQtyShiftMonth();
         }
 
         public async Task<List<VwTurnoXMedicoCount>> ListOfShiftByDoctorQtyCurrentYear()
         {
-            TurnoRepository repShift = new TurnoRepository(_context);
-            return await repShift.GetQtyShiftByDoctorYear();
+            return await _turnoRepository.GetQtyShiftByDoctorYear();
         }
 
         public List<Dictionary<string, object>> ListOfShiftStateQtyCurrentYear()
         {
-            TurnoRepository repShift = new TurnoRepository(_context);
             int currentYr = DateTime.Now.Year;
+            DataTable dt = _turnoRepository.GetPivotTurnoCount(currentYr);
 
-            // Este sigue siendo síncrono porque devuelve un DataTable dinámico
-            DataTable dt = repShift.GetPivotTurnoCount(currentYr);
-
-            List<Dictionary<string, object>> lista = new List<Dictionary<string, object>>();
+            var list = new List<Dictionary<string, object>>();
 
             foreach (DataRow row in dt.Rows)
             {
-                Dictionary<string, object> fila = new Dictionary<string, object>();
+                var dict = new Dictionary<string, object>();
+
                 foreach (DataColumn col in dt.Columns)
-                {
-                    fila[col.ColumnName] = row[col] is DBNull ? 0 : row[col];
-                }
-                lista.Add(fila);
+                    dict[col.ColumnName] = row[col] is DBNull ? 0 : row[col];
+
+                list.Add(dict);
             }
 
-            return lista;
+            return list;
         }
 
         public async Task<List<CalendarEvent>> ListOfCalendarData(string start, string end)
         {
-            TurnoRepository repShift = new TurnoRepository(_context);
-            return await repShift.GetCalendarData(start, end);
+            return await _turnoRepository.GetCalendarData(start, end);
         }
     }
 }

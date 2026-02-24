@@ -48,7 +48,6 @@ namespace BusinessLogic.AppLogic
             }
         }
 
-        // Crear Paciente y Usuario asociado (Transaccional)
         public async Task CreatePatientWithUserAsync(Paciente oPatient, string password)
         {
             if (oPatient == null)
@@ -60,42 +59,47 @@ namespace BusinessLogic.AppLogic
             if (string.IsNullOrWhiteSpace(oPatient.Dni))
                 throw new ArgumentException("El DNI es obligatorio.");
 
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            try
+            await strategy.ExecuteAsync(async () =>
             {
-                bool userExists = await _context.Usuario
-                    .AnyAsync(u => u.Username == oPatient.Dni);
+                await using var transaction = await _context.Database.BeginTransactionAsync();
 
-                if (userExists)
-                    throw new Exception("El DNI ya se encuentra registrado.");
-
-                var user = new Usuario
+                try
                 {
-                    Username = oPatient.Dni,
-                    Rol = UserRoles.Paciente,
-                    Email = oPatient.Email ?? "",
-                    IsActive = true
-                };
+                    bool userExists = await _context.Usuario
+                        .AnyAsync(u => u.Username == oPatient.Dni);
 
-                var passwordHasher = new PasswordHasher<Usuario>();
-                user.PasswordHash = passwordHasher.HashPassword(user, password);
+                    if (userExists)
+                        throw new Exception("El DNI ya se encuentra registrado.");
 
-                _context.Usuario.Add(user);
-                await _context.SaveChangesAsync();
+                    var user = new Usuario
+                    {
+                        Username = oPatient.Dni,
+                        Rol = UserRoles.Paciente,
+                        Email = oPatient.Email ?? "",
+                        IsActive = true
+                    };
 
-                oPatient.UsuarioId = user.Id;
+                    var passwordHasher = new PasswordHasher<Usuario>();
+                    user.PasswordHash = passwordHasher.HashPassword(user, password);
 
-                _context.Pacientes.Add(oPatient);
-                await _context.SaveChangesAsync();
+                    _context.Usuario.Add(user);
+                    await _context.SaveChangesAsync();
 
-                await transaction.CommitAsync();
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
+                    oPatient.UsuarioId = user.Id;
+
+                    _context.Pacientes.Add(oPatient);
+                    await _context.SaveChangesAsync();
+
+                    await transaction.CommitAsync();
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            });
         }
 
         // Actualizar Paciente

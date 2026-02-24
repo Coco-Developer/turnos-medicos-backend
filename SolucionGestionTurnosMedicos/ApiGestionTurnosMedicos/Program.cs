@@ -1,6 +1,7 @@
 using ApiGestionTurnosMedicos.Config;
 using ApiGestionTurnosMedicos.Middlewares;
 using ApiGestionTurnosMedicos.Services;
+using ApiGestionTurnosMedicos.Validations;
 using BusinessLogic.AppLogic;
 using BusinessLogic.AppLogic.Services;
 using DataAccess.Context;
@@ -102,6 +103,11 @@ builder.Services.AddScoped<MedicoLogic>();
 builder.Services.AddScoped<TurnoLogic>();
 builder.Services.AddScoped<EspecialidadLogic>();
 builder.Services.AddScoped<EstadoLogic>();
+
+// --- VALIDACIONES ---
+builder.Services.AddScoped<ValidationsMethodPost>();
+builder.Services.AddScoped<ValidationsMethodPut>();
+
 
 // --- SERVICIOS TRANSVERSALES ---
 builder.Services.AddScoped<EmailService>();

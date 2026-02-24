@@ -1,11 +1,11 @@
 ﻿using ApiGestionTurnosMedicos.Validations;
 using BusinessLogic.AppLogic;
-using DataAccess.Context;
 using DataAccess.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Models.CustomModels;
 using System.Diagnostics;
+using System.Net.NetworkInformation;
 
 namespace ApiGestionTurnosMedicos.Controllers
 {
@@ -15,45 +15,50 @@ namespace ApiGestionTurnosMedicos.Controllers
     public class TurnoController : ControllerBase
     {
         private readonly ILogger<TurnoController> _logger;
-        private readonly GestionTurnosContext _context;
+        private readonly TurnoLogic _turnoLogic;
+        private readonly ValidationsMethodPut _validationsPut;
 
-        public TurnoController(GestionTurnosContext context, ILogger<TurnoController> logger)
+        public TurnoController(
+            TurnoLogic turnoLogic,
+            ValidationsMethodPut validationsPut,
+            ILogger<TurnoController> logger)
         {
-            _context = context;
+            _turnoLogic = turnoLogic;
+            _validationsPut = validationsPut;
             _logger = logger;
         }
+
+        // ---------------- GET ALL ----------------
 
         [HttpGet]
         public async Task<ActionResult<List<VwTurno>>> Get()
         {
-            var sLogic = new TurnoLogic(_context);
-            return Ok(await sLogic.ShiftList());
+            return Ok(await _turnoLogic.ShiftList());
         }
+
+        // ---------------- GET BY ID ----------------
 
         [HttpGet("{id}")]
         public async Task<ActionResult<VwTurno>> Get(int id)
         {
-            var sLogic = new TurnoLogic(_context);
-            var turno = await sLogic.GetShiftForId(id);
+            var turno = await _turnoLogic.GetShiftForId(id);
+
             if (turno == null)
                 return NotFound(new { message = "Turno no encontrado." });
+
             return Ok(turno);
         }
+
+        // ---------------- CREATE ----------------
 
         [HttpPost]
         public async Task<IActionResult> Post([FromBody] TurnoCustom oShift)
         {
-            var validations = new ValidationsMethodPost(_context);
-
-            // CORRECCIÓN: Se agrega 'await' para resolver la Task
-            var validationResult = await validations.ValidationsMethodPostShift(oShift);
-
-            if (!validationResult.IsValid)
-                return BadRequest(new { message = validationResult.ErrorMessage });
+            if (oShift == null)
+                return BadRequest(new { message = "Datos de turno inválidos." });
 
             try
             {
-                var sLogic = new TurnoLogic(_context);
                 var shift = new Turno
                 {
                     MedicoId = oShift.MedicoId,
@@ -64,7 +69,8 @@ namespace ApiGestionTurnosMedicos.Controllers
                     Observaciones = oShift.Observaciones
                 };
 
-                await sLogic.CreateShift(shift);
+                await _turnoLogic.CreateShift(shift);
+
                 return Ok(new { message = "Turno creado correctamente." });
             }
             catch (Exception ex)
@@ -74,75 +80,75 @@ namespace ApiGestionTurnosMedicos.Controllers
             }
         }
 
-        [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateTurno(int id, [FromBody] TurnoCustom turnoUpdate)
+        // ---------------- UPDATE ----------------
+
+        [HttpPut("{id:int}")]
+        public async Task<IActionResult> UpdateTurno(int id, [FromBody] TurnoCustom dto)
         {
-            if (turnoUpdate == null)
+            if (dto == null)
                 return BadRequest(new { message = "Datos de turno inválidos." });
 
-            var validations = new ValidationsMethodPut(_context);
+            var validation = await _validationsPut.ValidateShiftAsync(dto);
 
-            // CORRECCIÓN: Se agrega 'await'
-            var validationResult = await validations.ValidationsMethodPutShift(turnoUpdate);
-
-            if (!validationResult.IsValid)
-                return BadRequest(new { message = validationResult.ErrorMessage });
+            if (!validation.IsValid)
+                return BadRequest(new { message = validation.ErrorMessage });
 
             try
             {
-                var sLogic = new TurnoLogic(_context);
-
                 var shift = new Turno
                 {
-                    Fecha = DateTime.Parse(turnoUpdate.Fecha),
-                    Hora = TimeSpan.Parse(turnoUpdate.Hora),
-                    MedicoId = turnoUpdate.MedicoId,
-                    PacienteId = turnoUpdate.PacienteId,
-                    EstadoId = turnoUpdate.EstadoId,
-                    Observaciones = turnoUpdate.Observaciones
+                    Fecha = DateTime.Parse(dto.Fecha),
+                    Hora = TimeSpan.Parse(dto.Hora),
+                    MedicoId = dto.MedicoId,
+                    PacienteId = dto.PacienteId,
+                    EstadoId = dto.EstadoId,
+                    Observaciones = dto.Observaciones
                 };
 
-                await sLogic.UpdateShift(id, shift);
-
-                _logger.LogInformation("Usuario {Usuario} modificó el turno {id} a las {FechaHora}",
-                    User?.Identity?.Name ?? "Anónimo", id, DateTime.UtcNow);
+                await _turnoLogic.UpdateShift(id, shift);
 
                 return Ok(new { message = "Turno actualizado correctamente." });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error al actualizar turno");
-                return BadRequest(new { message = ex.Message });
+                _logger.LogError(ex, "Error actualizando turno");
+                return StatusCode(500, "Error interno");
             }
         }
 
-        [HttpPut("set-turno-status/{id}")]
+        // ---------------- UPDATE STATUS ----------------
+
+        [HttpPut("set-turno-status/{id:int}")]
         public async Task<IActionResult> UpdateTurnoStatus(int id, [FromQuery] int st, [FromQuery] int? o = null)
         {
-            var oStatus = new Estado { Id = st };
-            int src = o ?? 0;
+            var status = new Estado { Id = st };
 
-            var validations = new ValidationsMethodPut(_context);
+            var validation = await _validationsPut.ValidateStatusAsync(status);
 
-            // CORRECCIÓN: Se agrega 'await'
-            var validationResult = await validations.ValidationMethodPutStatus(oStatus);
+            if (!validation.IsValid)
+                return BadRequest(new { message = validation.ErrorMessage });
 
-            if (!validationResult.IsValid)
-                return BadRequest(new { message = validationResult.ErrorMessage });
+            try
+            {
+                await _turnoLogic.UpdateShiftStatus(id, st, o ?? 0);
 
-            var sLogic = new TurnoLogic(_context);
-            await sLogic.UpdateShiftStatus(id, oStatus.Id, src);
-
-            return Ok(new { message = "Estado del turno actualizado correctamente." });
+                return Ok(new { message = "Estado actualizado correctamente." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error actualizando estado");
+                return StatusCode(500, "Error interno");
+            }
         }
+
+        // ---------------- DELETE ----------------
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
             try
             {
-                var sLogic = new TurnoLogic(_context);
-                await sLogic.DeleteShift(id);
+                await _turnoLogic.DeleteShift(id);
                 return Ok(new { message = "Turno eliminado correctamente." });
             }
             catch (Exception ex)
@@ -152,33 +158,35 @@ namespace ApiGestionTurnosMedicos.Controllers
             }
         }
 
+        // ---------------- LIST BY PATIENT ----------------
+
         [HttpGet("get-turnos-by-patient/{idPaciente}")]
         public async Task<ActionResult<List<VwTurno>>> GetListOfShiftsByPatientVw(int idPaciente)
         {
-            var sLogic = new TurnoLogic(_context);
-            return Ok(await sLogic.ListOfShiftsByPatientVw(idPaciente));
+            return Ok(await _turnoLogic.ListOfShiftsByPatientVw(idPaciente));
         }
+
+        // ---------------- LIST BY DOCTOR ----------------
 
         [HttpGet("get-turnos-of-doctor/{idMedico}")]
         public async Task<ActionResult<List<Turno>>> GetListOfShiftsByDoctor(int idMedico)
         {
-            var sLogic = new TurnoLogic(_context);
-            return Ok(await sLogic.ListOfShiftsByDoctor(idMedico));
+            return Ok(await _turnoLogic.ListOfShiftsByDoctor(idMedico));
         }
+
+        // ---------------- DASHBOARD ----------------
 
         [HttpGet("get-dashboard-data")]
         public async Task<ActionResult<Dictionary<string, object>>> GetDashboardData()
         {
             var stopwatch = Stopwatch.StartNew();
+
             try
             {
-                var sLogic = new TurnoLogic(_context);
-
-                var taskQtyYr = sLogic.ListOfShiftQtyCurrentYear();
-                var taskQtyMo = sLogic.ListOfShiftQtyCurrentMonth();
-                var taskQtyDoc = sLogic.ListOfShiftByDoctorQtyCurrentYear();
-
-                var qtyStatesYr = sLogic.ListOfShiftStateQtyCurrentYear();
+                var taskQtyYr = _turnoLogic.ListOfShiftQtyCurrentYear();
+                var taskQtyMo = _turnoLogic.ListOfShiftQtyCurrentMonth();
+                var taskQtyDoc = _turnoLogic.ListOfShiftByDoctorQtyCurrentYear();
+                var qtyStatesYr = _turnoLogic.ListOfShiftStateQtyCurrentYear();
 
                 await Task.WhenAll(taskQtyYr, taskQtyMo, taskQtyDoc);
 
@@ -192,6 +200,7 @@ namespace ApiGestionTurnosMedicos.Controllers
 
                 stopwatch.Stop();
                 _logger.LogInformation("Dashboard generado en {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
+
                 return Ok(result);
             }
             catch (Exception ex)

@@ -1,129 +1,134 @@
 ﻿using BusinessLogic.AppLogic;
-using DataAccess.Data;
 using Microsoft.AspNetCore.Mvc;
 using Models.CustomModels;
 using ApiGestionTurnosMedicos.Validations;
 using Microsoft.AspNetCore.Authorization;
-using DataAccess.Context;
 
 namespace ApiGestionTurnosMedicos.Controllers
 {
     [Authorize]
-    [Route("[controller]")] // Eliminado el "/" inicial, [controller] es suficiente
+    [Route("[controller]")]
     [ApiController]
     public class MedicoController : ControllerBase
     {
         private readonly ILogger<MedicoController> _logger;
-        private readonly GestionTurnosContext _context;
+        private readonly MedicoLogic _medicoLogic;
+        private readonly ValidationsMethodPost _validationsPost;
+        private readonly ValidationsMethodPut _validationsPut;
 
-        public MedicoController(GestionTurnosContext context, ILogger<MedicoController> logger)
+        public MedicoController(
+            MedicoLogic medicoLogic,
+            ValidationsMethodPost validationsPost,
+            ValidationsMethodPut validationsPut,
+            ILogger<MedicoController> logger)
         {
-            _context = context;
+            _medicoLogic = medicoLogic;
+            _validationsPost = validationsPost;
+            _validationsPut = validationsPut;
             _logger = logger;
         }
 
+        #region GET ALL
+
         [HttpGet]
         [Authorize(Roles = "Admin")]
-        public async Task<ActionResult<List<Medico>>> Get()
+        public async Task<IActionResult> Get()
         {
             try
             {
-                MedicoLogic dLogic = new(_context);
-                return Ok(await dLogic.DoctorList());
+                var doctors = await _medicoLogic.DoctorList();
+                return Ok(doctors);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error en Get Doctors");
+                _logger.LogError(ex, "Error listando médicos");
                 return StatusCode(500, "Error interno al listar médicos");
             }
         }
 
-        // REGLA: Usamos :int para evitar que rutas de texto caigan aquí
+        #endregion
+
+        #region GET BY ID
+
         [HttpGet("{id:int}")]
         [Authorize(Roles = "Admin,Medico")]
-        public async Task<ActionResult<Medico>> Get(int id)
+        public async Task<IActionResult> Get(int id)
         {
             try
             {
-                MedicoLogic dLogic = new(_context);
-                var medico = await dLogic.GetDoctorForId(id);
-                if (medico == null) return NotFound(new { message = "Médico no encontrado" });
+                var medico = await _medicoLogic.GetDoctorForId(id);
+
+                if (medico == null)
+                    return NotFound(new { message = "Médico no encontrado" });
+
                 return Ok(medico);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ex.Message);
+                _logger.LogError(ex, "Error obteniendo médico {Id}", id);
+                return StatusCode(500, "Error interno");
             }
         }
 
+        #endregion
+
+        #region POST
+
         [HttpPost]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> Post([FromBody] MedicoCustom oDoctor)
+        public async Task<IActionResult> Post([FromBody] MedicoCustom dto)
         {
-            if (oDoctor == null) return BadRequest(new { message = "Cuerpo de médico inválido" });
+            if (dto == null)
+                return BadRequest(new { message = "Cuerpo inválido" });
 
-            MedicoLogic dLogic = new(_context);
-            ValidationsMethodPost validations = new(_context);
+            var validation = await _validationsPost.ValidateDoctorAsync(dto);
 
-            var validationResult = await validations.ValidationsMethodPostDoctor(oDoctor);
-            if (!validationResult.IsValid) return BadRequest(new { message = validationResult.ErrorMessage });
+            if (!validation.IsValid)
+                return BadRequest(new { message = validation.ErrorMessage });
 
             try
             {
-                Medico medico = new()
-                {
-                    Nombre = oDoctor.Nombre,
-                    Apellido = oDoctor.Apellido,
-                    EspecialidadId = oDoctor.EspecialidadId,
-                    FechaAltaLaboral = oDoctor.FechaAltaLaboral,
-                    Direccion = oDoctor.Direccion,
-                    Dni = oDoctor.Dni,
-                    Telefono = oDoctor.Telefono,
-                    Matricula = oDoctor.Matricula,
-                    Foto = string.IsNullOrEmpty(oDoctor.Foto) ? null : Convert.FromBase64String(oDoctor.Foto)
-                };
-
-                var horarios = oDoctor.Horarios?.Select(h => new HorarioMedico
-                {
-                    DiaSemana = h.DiaSemana,
-                    HorarioAtencionInicio = h.HorarioAtencionInicio,
-                    HorarioAtencionFin = h.HorarioAtencionFin
-                }).ToList() ?? new List<HorarioMedico>();
-
-                await dLogic.CreateDoctor(medico, horarios);
+                await _medicoLogic.CreateDoctor(dto);
                 return Ok(new { message = "Médico creado correctamente" });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error al crear médico");
-                return StatusCode(500, new { message = "Error al guardar en base de datos", detail = ex.Message });
+                _logger.LogError(ex, "Error creando médico");
+                return StatusCode(500, "Error interno al crear médico");
             }
         }
+
+        #endregion
+
+        #region PUT
 
         [HttpPut("{id:int}")]
         [Authorize(Roles = "Admin,Medico")]
-        public async Task<IActionResult> Put(int id, [FromBody] MedicoCustom oDoctor)
+        public async Task<IActionResult> Put(int id, [FromBody] MedicoCustom dto)
         {
-            if (oDoctor == null) return BadRequest(new { message = "Datos de actualización inválidos" });
+            if (dto == null)
+                return BadRequest(new { message = "Datos inválidos" });
 
-            ValidationsMethodPut validations = new ValidationsMethodPut(_context);
-            var validationResult = await validations.ValidationsMethodPutDoctor(oDoctor);
+            var validation = await _validationsPut.ValidateDoctorAsync(dto);
 
-            if (!validationResult.IsValid) return BadRequest(new { message = validationResult.ErrorMessage });
+            if (!validation.IsValid)
+                return BadRequest(new { message = validation.ErrorMessage });
 
             try
             {
-                MedicoLogic dLogic = new(_context);
-                await dLogic.UpdateDoctor(id, oDoctor);
-
-                _logger.LogInformation("Médico {id} modificado por {Usuario}", id, User?.Identity?.Name ?? "Anónimo");
-                return Ok(new { message = "Médico actualizado" });
+                await _medicoLogic.UpdateDoctor(id, dto);
+                return Ok(new { message = "Médico actualizado correctamente" });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ex.Message);
+                _logger.LogError(ex, "Error actualizando médico {Id}", id);
+                return StatusCode(500, "Error interno al actualizar médico");
             }
         }
+
+        #endregion
+
+        #region DELETE
 
         [HttpDelete("{id:int}")]
         [Authorize(Roles = "Admin")]
@@ -131,53 +136,52 @@ namespace ApiGestionTurnosMedicos.Controllers
         {
             try
             {
-                MedicoLogic dLogic = new(_context);
-                await dLogic.DeleteDoctor(id);
-                return Ok(new { message = "Médico eliminado" });
+                await _medicoLogic.DeleteDoctor(id);
+                return Ok(new { message = "Médico eliminado correctamente" });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, "Error al eliminar");
+                _logger.LogError(ex, "Error eliminando médico {Id}", id);
+                return StatusCode(500, "Error interno al eliminar");
             }
         }
 
+        #endregion
+
+        #region EXTRA ENDPOINTS
+
         [HttpGet("list-for-specialty/{id:int}")]
-        [Authorize]
         public async Task<IActionResult> GetListDoctorForSpecialty(int id)
         {
             try
             {
-                MedicoLogic dLogic = new(_context);
-                var doctors = await dLogic.FindDoctorForSpecialty(id);
-                if (doctors == null || !doctors.Any()) return NotFound($"No se encuentran médicos con la especialidad {id}");
+                var doctors = await _medicoLogic.FindDoctorForSpecialty(id);
+
+                if (!doctors.Any())
+                    return NotFound(new { message = "No se encontraron médicos para la especialidad" });
+
                 return Ok(doctors);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error: {ex.Message}");
+                _logger.LogError(ex, "Error buscando médicos por especialidad");
+                return StatusCode(500, "Error interno");
             }
-        }
-
-        [HttpGet("get-all-doctors")]
-        [Authorize(Roles = "Admin,Medico")]
-        public async Task<ActionResult<List<MedicoCustom>>> ReturnAllDoctorsWithOurSpecialty()
-        {
-            MedicoLogic dLogic = new(_context);
-            return Ok(await dLogic.ReturnAllDoctorsWithOurSpecialty());
         }
 
         [HttpGet("get-qty")]
         [Authorize(Roles = "Admin")]
-        public async Task<ActionResult<int>> GetDoctorsQtyi()
+        public async Task<IActionResult> GetDoctorsQty()
         {
             try
             {
-                MedicoLogic pLogic = new(_context);
-                return Ok(await pLogic.GetDoctorsQty());
+                var qty = await _medicoLogic.GetDoctorsQty();
+                return Ok(qty);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { ex.Message });
+                _logger.LogError(ex, "Error obteniendo cantidad");
+                return StatusCode(500, "Error interno");
             }
         }
 
@@ -186,14 +190,17 @@ namespace ApiGestionTurnosMedicos.Controllers
         {
             try
             {
-                MedicoLogic dLogic = new(_context);
-                var schedule = await dLogic.GetScheduleForDoctor(id);
-                if (schedule == null || !schedule.Any()) return NotFound("No se encontraron horarios");
+                var schedule = await _medicoLogic.GetScheduleForDoctor(id);
+
+                if (!schedule.Any())
+                    return NotFound(new { message = "No se encontraron horarios" });
+
                 return Ok(schedule);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ex.Message);
+                _logger.LogError(ex, "Error obteniendo horario médico");
+                return StatusCode(500, "Error interno");
             }
         }
 
@@ -202,15 +209,22 @@ namespace ApiGestionTurnosMedicos.Controllers
         {
             try
             {
-                MedicoLogic dLogic = new(_context);
-                var fechasOcupadas = await dLogic.GetFullScheduleForDoctor(id);
-                var fechasOcupadasStr = fechasOcupadas?.OrderBy(f => f).Select(f => f.ToString("yyyy-MM-dd")).ToList() ?? new List<string>();
-                return Ok(fechasOcupadasStr);
+                var fechas = await _medicoLogic.GetFullScheduleForDoctor(id);
+
+                var result = fechas
+                    .OrderBy(f => f)
+                    .Select(f => f.ToString("yyyy-MM-dd"))
+                    .ToList();
+
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al calcular fechas ocupadas", detail = ex.Message });
+                _logger.LogError(ex, "Error calculando agenda completa");
+                return StatusCode(500, "Error interno");
             }
         }
+
+        #endregion
     }
 }

@@ -1,7 +1,6 @@
 ﻿using ApiGestionTurnosMedicos.Validations;
 using BusinessLogic.AppLogic;
 using DataAccess.Data;
-using DataAccess.Context;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Models.CustomModels;
@@ -14,15 +13,20 @@ namespace ApiGestionTurnosMedicos.Controllers
     public class EstadoController : ControllerBase
     {
         private readonly EstadoLogic _estadoLogic;
+        private readonly ValidationsMethodPut _validations;
         private readonly ILogger<EstadoController> _logger;
-        private readonly GestionTurnosContext _context;
 
-        public EstadoController(EstadoLogic estadoLogic, ILogger<EstadoController> logger, GestionTurnosContext context)
+        public EstadoController(
+            EstadoLogic estadoLogic,
+            ValidationsMethodPut validations,
+            ILogger<EstadoController> logger)
         {
             _estadoLogic = estadoLogic;
+            _validations = validations;
             _logger = logger;
-            _context = context;
         }
+
+        // ================= GET ALL =================
 
         [HttpGet]
         public async Task<ActionResult<List<Estado>>> Get()
@@ -38,6 +42,8 @@ namespace ApiGestionTurnosMedicos.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        // ================= GET BY ID =================
 
         [HttpGet("{id}")]
         public async Task<ActionResult<Estado>> Get(int id)
@@ -58,15 +64,18 @@ namespace ApiGestionTurnosMedicos.Controllers
             }
         }
 
+        // ================= CREATE =================
+
         [HttpPost]
         [Authorize(Roles = UserRoles.Admin)]
         public async Task<IActionResult> Post([FromBody] Estado estado)
         {
             try
             {
-                // Si tienes un ValidationsMethodPost para Estado, deberías llamarlo aquí con await
                 await _estadoLogic.CreateEstadoAsync(estado);
+
                 _logger.LogInformation("Estado creado: {Nombre}", estado.Nombre);
+
                 return Ok(new { message = "Estado creado correctamente" });
             }
             catch (Exception ex)
@@ -76,23 +85,23 @@ namespace ApiGestionTurnosMedicos.Controllers
             }
         }
 
+        // ================= UPDATE =================
+
         [HttpPut("{id}")]
         [Authorize(Roles = UserRoles.Admin)]
         public async Task<IActionResult> Put(int id, [FromBody] Estado estado)
         {
             try
             {
-                // Aplicamos la validación asíncrona usando await
-                var validations = new ValidationsMethodPut(_context);
-                var validationResult = await validations.ValidationMethodPutStatus(estado);
+                var validationResult = await _validations.ValidateStatusAsync(estado);
 
                 if (!validationResult.IsValid)
-                {
                     return BadRequest(new { message = validationResult.ErrorMessage });
-                }
 
                 await _estadoLogic.UpdateEstadoAsync(id, estado);
+
                 _logger.LogInformation("Estado ID {Id} actualizado", id);
+
                 return Ok(new { message = "Estado actualizado correctamente" });
             }
             catch (KeyNotFoundException ex)
@@ -106,6 +115,8 @@ namespace ApiGestionTurnosMedicos.Controllers
             }
         }
 
+        // ================= DELETE =================
+
         [HttpDelete("{id}")]
         [Authorize(Roles = UserRoles.Admin)]
         public async Task<IActionResult> Delete(int id)
@@ -113,7 +124,9 @@ namespace ApiGestionTurnosMedicos.Controllers
             try
             {
                 await _estadoLogic.DeleteEstadoAsync(id);
+
                 _logger.LogInformation("Estado ID {Id} eliminado", id);
+
                 return Ok(new { message = "Estado eliminado correctamente" });
             }
             catch (KeyNotFoundException ex)
