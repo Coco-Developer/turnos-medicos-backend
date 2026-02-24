@@ -1,4 +1,7 @@
-﻿namespace DataAccess.Data
+﻿using System.ComponentModel.DataAnnotations.Schema; 
+
+
+namespace DataAccess.Data
 {
     public class Medico
     {
@@ -14,7 +17,10 @@
         public string? Matricula { get; set; }
 
 
+        [Column("horario_atencion_inicio")] // Nombre exacto de la foto
         public TimeSpan HorarioAtencionInicio { get; set; }
+
+        [Column("horario_atencion_fin")]    // Nombre exacto de la foto
         public TimeSpan HorarioAtencionFin { get; set; }
 
         public virtual ICollection<HorarioMedico> Horarios { get; set; } = new List<HorarioMedico>();
