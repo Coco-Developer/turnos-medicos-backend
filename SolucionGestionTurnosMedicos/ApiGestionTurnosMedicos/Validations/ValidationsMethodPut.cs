@@ -4,6 +4,8 @@ using DataAccess.Context;
 using DataAccess.Data;
 using DataAccess.Repository;
 using Models.CustomModels;
+using System;
+using System.Threading.Tasks;
 
 namespace ApiGestionTurnosMedicos.Validations
 {
@@ -45,21 +47,19 @@ namespace ApiGestionTurnosMedicos.Validations
         /// </summary>
         /// <param name="oDoctor">Objeto MedicoCustom con los datos del médico</param>
         /// <returns>Objeto ValidationsMethodPut con el resultado de la validación</returns>
-        public ValidationsMethodPut ValidationsMethodPutDoctor(MedicoCustom oDoctor)
+        public async Task<ValidationsMethodPut> ValidationsMethodPutDoctor(MedicoCustom oDoctor)
         {
             MedicoRepository repoDoctor = new MedicoRepository(_context);
             EspecialidadRepository repSpecialty = new EspecialidadRepository(_context);
             AllValidations validations = new AllValidations();
             Medico doctor = new Medico();
 
-            //doctor.HorarioAtencionInicio = oDoctor.ModifyStartTime(oDoctor.HorarioAtencionInicio);
-            //doctor.HorarioAtencionFin = oDoctor.ModifyEndTime(oDoctor.HorarioAtencionFin);
-
             try
             {
                 #region Validaciones de existencia
 
-                if (!repSpecialty.VerifyIfSpecialtyExist(oDoctor.EspecialidadId))
+                // Corregido: Agregado await y nombre de método asíncrono
+                if (!await repSpecialty.VerifyIfSpecialtyExistAsync(oDoctor.EspecialidadId))
                     throw new ArgumentException("Especialidad no encontrada.");
 
                 #endregion
@@ -83,13 +83,6 @@ namespace ApiGestionTurnosMedicos.Validations
                 if (!validations.EsSoloNumeros(oDoctor.Telefono))
                     throw new ArgumentException("El Teléfono solo puede contener números.");
 
-                
-                // Lo mismo que el POST
-                //if (doctor.HorarioAtencionInicio < new TimeSpan(7, 0, 0) || doctor.HorarioAtencionInicio > new TimeSpan(18, 0, 0))
-                //{
-                //    throw new ArgumentException("El Inicio de Atención debe estar entre las 07:00 y las 18:00");
-                //}
-
                 if (oDoctor.FechaAltaLaboral > DateTime.Now)
                     throw new ArgumentException("La Fecha de Alta Laboral no puede ser en el futuro.");
 
@@ -111,7 +104,7 @@ namespace ApiGestionTurnosMedicos.Validations
         /// </summary>
         /// <param name="oPatient">Objeto Paciente con los datos del paciente</param>
         /// <returns>Objeto ValidationsMethodPut con el resultado de la validación</returns>
-        public ValidationsMethodPut ValidationsMethodPutPatient(Paciente oPatient)
+        public async Task<ValidationsMethodPut> ValidationsMethodPutPatient(Paciente oPatient)
         {
             AllValidations validations = new AllValidations();
 
@@ -128,9 +121,7 @@ namespace ApiGestionTurnosMedicos.Validations
                 if (!validations.EsStringNoVacio((oPatient.FechaNacimiento).ToString()))
                     throw new ArgumentException("La Fecha de Nacimiento no puede quedar vacía.");
                 if (!validations.EsStringNoVacio(oPatient.Email))
-                //    throw new ArgumentException("El Email no puede quedar vacío.");
-                //if (!validations.EsStringNoVacio(oPatient.Dni))
-                    throw new ArgumentException("El DNI no puede quedar vacío.");
+                    throw new ArgumentException("El Email no puede quedar vacío.");
                 if (!validations.EsStringNoVacio(oPatient.Telefono))
                     throw new ArgumentException("El Teléfono no puede quedar vacío.");
 
@@ -167,13 +158,15 @@ namespace ApiGestionTurnosMedicos.Validations
         /// </summary>
         /// <param name="oStatus">Objeto Estado con los datos del estado</param>
         /// <returns>Objeto ValidationsMethodPut con el resultado de la validación</returns>
-        public ValidationsMethodPut ValidationMethodPutStatus(Estado oStatus)
+        public async Task<ValidationsMethodPut> ValidationMethodPutStatus(Estado oStatus)
         {
             try
             {
                 EstadoRepository repoEstado = new(_context);
 
-                if (repoEstado.GetEstadoById(oStatus.Id) == null)
+                // Corregido: Agregado await para obtener el resultado de la base de datos
+                var estado = await repoEstado.GetEstadoByIdAsync(oStatus.Id);
+                if (estado == null)
                     throw new ArgumentException("El Estado no existe.");
 
                 return new ValidationsMethodPut { IsValid = true };
@@ -190,7 +183,7 @@ namespace ApiGestionTurnosMedicos.Validations
         /// </summary>
         /// <param name="turno">Objeto TurnoCustom con los datos del turno</param>
         /// <returns>Objeto ValidationsMethodPut con el resultado de la validación</returns>
-        public ValidationsMethodPut ValidationsMethodPutShift(TurnoCustom turno)
+        public async Task<ValidationsMethodPut> ValidationsMethodPutShift(TurnoCustom turno)
         {
             try
             {
@@ -202,9 +195,11 @@ namespace ApiGestionTurnosMedicos.Validations
 
                 #region Validaciones de existencia
 
-                if (!repoDoctor.VerifyIfDoctorExistReturnBool(turno.MedicoId))
+                // Corregido: Agregado await para los métodos que devuelven Task<bool>
+                if (!await repoDoctor.VerifyIfDoctorExistReturnBool(turno.MedicoId))
                     throw new ArgumentException("El médico seleccionado no existe");
-                if (!repoPatient.VerifyIfPatientExistByIdAsync(turno.PacienteId).Result)
+
+                if (!await repoPatient.VerifyIfPatientExistByIdAsync(turno.PacienteId))
                     throw new ArgumentException("El paciente seleccionado no existe");
 
                 #endregion
@@ -224,23 +219,14 @@ namespace ApiGestionTurnosMedicos.Validations
 
                 #region Validaciones lógicas
 
-                DateTime fechaTurno = DateTime.Parse(turno.Fecha); // Fecha del turno
-                TimeSpan horaTurno = TimeSpan.Parse(turno.Hora);   // Hora del turno
-                DateTime fechaYHoraTurno = fechaTurno.Add(horaTurno); // Combinas fecha y hora
+                DateTime fechaTurno = DateTime.Parse(turno.Fecha);
+                TimeSpan horaTurno = TimeSpan.Parse(turno.Hora);
+                DateTime fechaYHoraTurno = fechaTurno.Add(horaTurno);
 
-                // Comparación de fecha y hora del turno con el momento actual
                 if (fechaYHoraTurno < DateTime.Now)
                 {
                     throw new ArgumentException("La fecha y hora del turno no pueden ser en el pasado");
                 }
-
-                // Lo mismo que el POST
-                // Valida que la hora esté dentro del rango horario del médico                
-                //Medico doctorHorario = repoDoctor.ReturnHorariosForDoctor(turno.MedicoId);
-                //if (horaTurno < doctorHorario.HorarioAtencionInicio || horaTurno > doctorHorario.HorarioAtencionFin)
-                //{
-                //    throw new ArgumentException("La fecha del turno debe estar dentro del rango horario del médico");
-                //}
 
                 #endregion
 
@@ -251,6 +237,5 @@ namespace ApiGestionTurnosMedicos.Validations
                 return new ValidationsMethodPut { IsValid = false, ErrorMessage = e.Message };
             }
         }
-
     }
 }

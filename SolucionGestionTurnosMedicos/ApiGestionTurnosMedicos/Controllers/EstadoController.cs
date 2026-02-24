@@ -1,8 +1,10 @@
-﻿using BusinessLogic.AppLogic;
-using DataAccess.Context;
+﻿using ApiGestionTurnosMedicos.Validations;
+using BusinessLogic.AppLogic;
 using DataAccess.Data;
+using DataAccess.Context;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Models.CustomModels;
 
 namespace ApiGestionTurnosMedicos.Controllers
 {
@@ -13,19 +15,22 @@ namespace ApiGestionTurnosMedicos.Controllers
     {
         private readonly EstadoLogic _estadoLogic;
         private readonly ILogger<EstadoController> _logger;
+        private readonly GestionTurnosContext _context;
 
-        public EstadoController(GestionTurnosContext context, ILogger<EstadoController> logger)
+        public EstadoController(EstadoLogic estadoLogic, ILogger<EstadoController> logger, GestionTurnosContext context)
         {
-            _estadoLogic = new EstadoLogic(context);
+            _estadoLogic = estadoLogic;
             _logger = logger;
+            _context = context;
         }
 
         [HttpGet]
-        public ActionResult<List<Estado>> Get()
+        public async Task<ActionResult<List<Estado>>> Get()
         {
             try
             {
-                return Ok(_estadoLogic.GetAllEstados());
+                var estados = await _estadoLogic.GetAllEstadosAsync();
+                return Ok(estados);
             }
             catch (Exception ex)
             {
@@ -35,15 +40,16 @@ namespace ApiGestionTurnosMedicos.Controllers
         }
 
         [HttpGet("{id}")]
-        public ActionResult<Estado> Get(int id)
+        public async Task<ActionResult<Estado>> Get(int id)
         {
             try
             {
-                var estado = _estadoLogic.GetEstadoById(id);
-                if (estado == null)
-                    return NotFound(new { message = "Estado no encontrado" });
-
+                var estado = await _estadoLogic.GetEstadoByIdAsync(id);
                 return Ok(estado);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -53,12 +59,13 @@ namespace ApiGestionTurnosMedicos.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Admin")]
-        public IActionResult Post([FromBody] Estado estado)
+        [Authorize(Roles = UserRoles.Admin)]
+        public async Task<IActionResult> Post([FromBody] Estado estado)
         {
             try
             {
-                _estadoLogic.CreateEstado(estado);
+                // Si tienes un ValidationsMethodPost para Estado, deberías llamarlo aquí con await
+                await _estadoLogic.CreateEstadoAsync(estado);
                 _logger.LogInformation("Estado creado: {Nombre}", estado.Nombre);
                 return Ok(new { message = "Estado creado correctamente" });
             }
@@ -70,14 +77,27 @@ namespace ApiGestionTurnosMedicos.Controllers
         }
 
         [HttpPut("{id}")]
-        [Authorize(Roles = "Admin")]
-        public IActionResult Put(int id, [FromBody] Estado estado)
+        [Authorize(Roles = UserRoles.Admin)]
+        public async Task<IActionResult> Put(int id, [FromBody] Estado estado)
         {
             try
             {
-                _estadoLogic.UpdateEstado(id, estado);
+                // Aplicamos la validación asíncrona usando await
+                var validations = new ValidationsMethodPut(_context);
+                var validationResult = await validations.ValidationMethodPutStatus(estado);
+
+                if (!validationResult.IsValid)
+                {
+                    return BadRequest(new { message = validationResult.ErrorMessage });
+                }
+
+                await _estadoLogic.UpdateEstadoAsync(id, estado);
                 _logger.LogInformation("Estado ID {Id} actualizado", id);
                 return Ok(new { message = "Estado actualizado correctamente" });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -87,14 +107,18 @@ namespace ApiGestionTurnosMedicos.Controllers
         }
 
         [HttpDelete("{id}")]
-        [Authorize(Roles = "Admin")]
-        public IActionResult Delete(int id)
+        [Authorize(Roles = UserRoles.Admin)]
+        public async Task<IActionResult> Delete(int id)
         {
             try
             {
-                _estadoLogic.DeleteEstado(id);
+                await _estadoLogic.DeleteEstadoAsync(id);
                 _logger.LogInformation("Estado ID {Id} eliminado", id);
                 return Ok(new { message = "Estado eliminado correctamente" });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
             }
             catch (Exception ex)
             {

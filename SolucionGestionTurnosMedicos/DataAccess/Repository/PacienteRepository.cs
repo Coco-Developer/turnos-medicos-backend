@@ -19,40 +19,40 @@ namespace DataAccess.Repository
         }
         #endregion
 
-        // Obtener todos los pacientes (asíncrono)
+        // Obtener todos los pacientes
         public async Task<List<Paciente>> GetAllPatientsAsync()
         {
             return await _context.Pacientes.ToListAsync();
         }
 
-        // Obtener la cantidad de pacientes (asíncrono)
+        // Obtener la cantidad de pacientes
         public async Task<int> GetQtyPatientsAsync()
         {
             return await _context.Pacientes.CountAsync();
         }
 
-        // Obtener un paciente por su ID (asíncrono)
-        public Paciente GetPatientForId(int id)
-
+        // Obtener un paciente por su ID 
+        // Cambiado a async para que TurnoLogic no explote al llamarlo
+        public async Task<Paciente?> GetPatientForId(int id)
         {
-            return _context.Pacientes.Find(id);
+            return await _context.Pacientes.FindAsync(id);
         }
 
-        // Crear un nuevo paciente (asíncrono)
+        // Crear un nuevo paciente
         public async Task CreatePatientAsync(Paciente oPatient)
         {
             await _context.Pacientes.AddAsync(oPatient);
             await _context.SaveChangesAsync();
         }
 
-        // Actualizar un paciente (asíncrono)
+        // Actualizar un paciente
         public async Task UpdatePatientAsync(Paciente oPatient)
         {
             _context.Pacientes.Update(oPatient);
             await _context.SaveChangesAsync();
         }
 
-        // Eliminar un paciente por su ID (asíncrono)
+        // Eliminar un paciente por su ID
         public async Task DeletePatientAsync(int id)
         {
             var patient = await _context.Pacientes.FindAsync(id);
@@ -67,29 +67,21 @@ namespace DataAccess.Repository
             }
         }
 
-        // Obtener un paciente por su DNI (asíncrono)
+        // Obtener un paciente por su DNI
         public async Task<Paciente?> GetPatientForDNIAsync(string dni)
         {
             return await _context.Pacientes
-                .Where(p => p.Dni == dni)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(p => p.Dni == dni);
         }
 
-        // Verificar si un paciente existe por nombre y DNI (asíncrono)
+        // Verificar si un paciente existe por nombre y DNI
         public async Task<bool> VerifyIfPatientExistAsync(string nombre, string dni)
         {
             return await _context.Pacientes
                 .AnyAsync(d => d.Nombre == nombre && d.Dni == dni);
         }
 
-        // Verificar si un paciente existe por nombre y DNI (síncrono)
-        public bool VerifyIfPatientExist(string nombre, string dni)
-        {
-            return _context.Pacientes
-                .Any(d => d.Nombre == nombre && d.Dni == dni);
-        }
-
-        // Buscar pacientes por apellido (asíncrono)
+        // Buscar pacientes por apellido
         public async Task<List<Paciente>> FindPatientForLastNameAsync(string lastName)
         {
             return await _context.Pacientes
@@ -97,25 +89,18 @@ namespace DataAccess.Repository
                 .ToListAsync();
         }
 
-        // Verificar si un paciente existe por ID (asíncrono)
+        // Verificar si un paciente existe por ID
         public async Task<bool> VerifyIfPatientExistByIdAsync(int id)
         {
             return await _context.Pacientes
                 .AnyAsync(d => d.Id == id);
         }
 
-        // Verificar si un paciente existe por ID (síncrono)
-        public bool VerifyIfPatientExistById(int id)
+        // Obtener paciente por ID de Usuario (útil para la App Móvil/Login)
+        public async Task<Paciente?> ObtenerPacientePorIdUsuarioAsync(int id)
         {
-            return _context.Pacientes
-                .Any(d => d.Id == id);
-        }
-
-        public Paciente ObtenerPacientePorIdUsuario(int id)
-        {
-            var resultado = _context.Pacientes.Where(p => p.UsuarioId == id).FirstOrDefault();
-
-            return resultado;
+            return await _context.Pacientes
+                .FirstOrDefaultAsync(p => p.UsuarioId == id);
         }
     }
 }

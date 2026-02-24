@@ -33,7 +33,9 @@ namespace BusinessLogic.AppLogic
             try
             {
                 var repPatient = new PacienteRepository(_context);
-                var patient = repPatient.GetPatientForId(id);
+                // Ahora usamos await porque el Repo es asíncrono
+                var patient = await repPatient.GetPatientForId(id);
+
                 if (patient == null)
                     throw new NotFoundException("No patient found with the given ID");
 
@@ -51,111 +53,85 @@ namespace BusinessLogic.AppLogic
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Validar que el paciente no sea nulo
                 if (oPatient == null)
                     throw new ArgumentNullException(nameof(oPatient), "El paciente no puede ser nulo.");
 
-                // Verificar que no exista un usuario con el mismo Dni (o username)
-                if (_context.Usuario.Any(u => u.Username == oPatient.Dni.ToString()))
+                // Verificación asíncrona de existencia de usuario
+                bool userExists = await _context.Usuario.AnyAsync(u => u.Username == oPatient.Dni.ToString());
+                if (userExists)
                     throw new ApplicationException("Ya existe un usuario con el mismo DNI.");
 
-                // Instanciar el PasswordHasher
                 var passwordHasher = new PasswordHasher<Usuario>();
+                var hashedPassword = passwordHasher.HashPassword(null!, password);
 
-                // Hash de la contraseña
-                var hashedPassword = passwordHasher.HashPassword(null, password);
-
-                // Crear el usuario
                 var user = new Usuario
                 {
-                    Username = oPatient.Dni.ToString(), // El Username será el DNI automático
+                    Username = oPatient.Dni.ToString(),
                     PasswordHash = hashedPassword,
-                    Rol = UserRoles.Paciente, // Rol Paciente
-                    Email = oPatient.Email, 
-                    IsActive = true            // Activar el usuario por defecto
+                    Rol = UserRoles.Paciente,
+                    Email = oPatient.Email,
+                    IsActive = true
                 };
 
-                // Guardar el usuario en la base de datos
                 _context.Usuario.Add(user);
                 await _context.SaveChangesAsync();
 
-                // Asociar el usuario al paciente
                 oPatient.UsuarioId = user.Id;
-                oPatient.Usuario = user; // Mantener la navegación en memoria
+                oPatient.Usuario = user;
 
-                // Guardar el paciente en la base de datos
                 _context.Pacientes.Add(oPatient);
                 await _context.SaveChangesAsync();
 
-                // Confirmar la transacción
                 await transaction.CommitAsync();
             }
             catch (Exception e)
             {
-                // Deshacer la transacción en caso de error
                 await transaction.RollbackAsync();
                 Console.WriteLine($"Error: {e.Message}");
                 throw new ApplicationException("Ocurrió un error al crear el paciente y el usuario.", e);
             }
         }
 
-
-
         public async Task UpdatePatientAsync(int id, UpdatePatientDto pacienteDto)
         {
-            var dummy = await _context.Pacientes
-                .Where(p => p.Id == id)
-                .Select(p => new
-                {
-                    Paciente = p,
-                    Usuario = _context.Usuario.FirstOrDefault(u => u.Id == p.UsuarioId)
-                })
-                .FirstOrDefaultAsync();
+            // Buscamos el paciente incluyendo su usuario de forma eficiente
+            var patient = await _context.Pacientes
+                .Include(p => p.Usuario)
+                .FirstOrDefaultAsync(p => p.Id == id);
 
-
-            if (dummy == null)
+            if (patient == null)
             {
                 throw new KeyNotFoundException($"Paciente con ID {id} no encontrado.");
             }
 
-            // Mapeo manual de los datos
-            dummy.Paciente.Apellido = pacienteDto.Apellido;
-            dummy.Paciente.Nombre = pacienteDto.Nombre;
-            dummy.Paciente.Telefono = pacienteDto.Telefono;
-            dummy.Paciente.Email = pacienteDto.Email;
-            dummy.Paciente.FechaNacimiento = pacienteDto.FechaNacimiento;
+            // Mapeo de datos
+            patient.Apellido = pacienteDto.Apellido;
+            patient.Nombre = pacienteDto.Nombre;
+            patient.Telefono = pacienteDto.Telefono;
+            patient.Email = pacienteDto.Email;
+            patient.FechaNacimiento = pacienteDto.FechaNacimiento;
 
             if (!string.IsNullOrWhiteSpace(pacienteDto.Password))
             {
-                if (dummy.Usuario == null)
+                if (patient.Usuario == null)
                 {
                     throw new ApplicationException("El paciente no tiene un usuario asociado para cambiar contraseña.");
                 }
 
                 var passwordHasher = new PasswordHasher<Usuario>();
-
-                // Sin "sal" adicional:
-                var hashedPassword = passwordHasher.HashPassword(null, pacienteDto.Password);
-
-                // Con "sal" adicional:
-                //var hashedPassword = passwordHasher.HashPassword(patient.Usuario, pacienteDto.Password);
-
-                dummy.Usuario.PasswordHash = hashedPassword;
-
-                dummy.Usuario.Email = pacienteDto.Email;
+                patient.Usuario.PasswordHash = passwordHasher.HashPassword(patient.Usuario, pacienteDto.Password);
+                patient.Usuario.Email = pacienteDto.Email; // Sincronizamos email del usuario
             }
 
-            // Guardamos los cambios en la base de datos
             await _context.SaveChangesAsync();
         }
-
 
         public async Task DeletePatientAsync(int id)
         {
             try
             {
                 var repPatient = new PacienteRepository(_context);
-                var patientFound =  repPatient.GetPatientForId(id);
+                var patientFound = await repPatient.GetPatientForId(id);
 
                 if (patientFound == null)
                     throw new NotFoundException("No patient found with the given ID");
@@ -168,7 +144,6 @@ namespace BusinessLogic.AppLogic
                 throw new ApplicationException("An error occurred while deleting the patient.", e);
             }
         }
-
 
         public async Task<Paciente> GetPatientForDNIAsync(string dni)
         {

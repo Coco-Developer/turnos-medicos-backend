@@ -9,9 +9,6 @@ using Models.CustomModels;
 
 namespace ApiGestionTurnosMedicos.Controllers
 {
-    /// <summary>  
-    /// Controlador API para la gestión de la autorización JWT y API Key.  
-    /// </summary>  
     [ApiController]
     [Route("[controller]")]
     public class AuthController : ControllerBase
@@ -26,10 +23,10 @@ namespace ApiGestionTurnosMedicos.Controllers
         }
 
         /// <summary>  
-        /// Genera un token JWT si la clave API es válida.  
+        /// Genera un token JWT administrativo basado en la API Key.
         /// </summary>  
         [HttpPost("token")]
-        [ApiKey] // ahora protegido por el atributo
+        [ApiKey]
         public IActionResult GetToken()
         {
             var jwtSettings = _config.GetSection("JwtSettings");
@@ -41,18 +38,19 @@ namespace ApiGestionTurnosMedicos.Controllers
                 Issuer = jwtSettings["Issuer"],
                 Audience = jwtSettings["Audience"],
                 Expires = DateTime.UtcNow.AddMinutes(int.Parse(jwtSettings["ExpiresInMinutes"]!)),
-                SigningCredentials = credentials
+                SigningCredentials = credentials,
+                // Agregamos un claim de sistema para identificar tokens generados por API Key
+                Subject = new System.Security.Claims.ClaimsIdentity(new[] { new System.Security.Claims.Claim("type", "ApiKeyToken") })
             };
 
             var tokenHandler = new JwtSecurityTokenHandler();
             var token = tokenHandler.CreateToken(tokenDescriptor);
-            var tokenString = tokenHandler.WriteToken(token);
 
-            return Ok(new { token = tokenString });
+            return Ok(new { token = tokenHandler.WriteToken(token) });
         }
 
         /// <summary>
-        /// Realiza login de usuario (por Nombre y Password) y retorna un JWT si las credenciales son válidas.
+        /// Login de usuario: valida credenciales y retorna JWT con datos de usuario.
         /// </summary>
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequestDto loginDto)
@@ -74,15 +72,17 @@ namespace ApiGestionTurnosMedicos.Controllers
         }
 
         /// <summary>
-        /// Retorna el perfil del usuario autenticado.
+        /// Obtiene el perfil del usuario autenticado mediante el token.
         /// </summary>
         [HttpGet("me")]
         [Authorize]
         public async Task<IActionResult> GetProfile()
         {
+            // Extraemos el userId del Claim configurado en AuthService
             var userIdStr = User.FindFirst("userId")?.Value;
+
             if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
-                return Unauthorized(new { message = "Token inválido o no contiene userId." });
+                return Unauthorized(new { message = "Token inválido o no contiene identificador de usuario." });
 
             var user = await _authService.GetUserByIdAsync(userId);
             if (user == null)
@@ -98,7 +98,7 @@ namespace ApiGestionTurnosMedicos.Controllers
         }
 
         /// <summary>
-        /// Cambia la contraseña del usuario por la nueva
+        /// Cambia la contraseña del usuario actual.
         /// </summary>
         [HttpPost("new-password")]
         [Authorize]
@@ -109,26 +109,26 @@ namespace ApiGestionTurnosMedicos.Controllers
                 return Unauthorized(new { message = "Token inválido" });
 
             if (string.IsNullOrWhiteSpace(actualPassword) || string.IsNullOrWhiteSpace(nuevoPassword))
-                return BadRequest(new { message = "La contraseña actual y la nueva no pueden estar vacías." });
+                return BadRequest(new { message = "Debe completar ambos campos de contraseña." });
 
             var result = await _authService.ChangePasswordAsync(userId, actualPassword, nuevoPassword);
 
             if (!result.Success)
                 return BadRequest(new { message = result.ErrorMessage });
 
-            return Ok(new { message = "Contraseña cambiada con éxito", cambiada = 1 });
+            return Ok(new { message = "Contraseña actualizada correctamente.", cambiada = 1 });
         }
 
         /// <summary>
-        /// Crea una nueva contraseña y envía un correo con la nueva contraseña al usuario.
+        /// Resetea la contraseña y la envía por email al nombre de usuario provisto.
         /// </summary>
         [HttpPost("forgot-password")]
-        public async Task<IActionResult> ForgotPassword([FromBody] string username)
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto)
         {
-            if (string.IsNullOrWhiteSpace(username))
-                return BadRequest(new { message = "El nombre de usuario no debe estar vacío." });
+            if (string.IsNullOrWhiteSpace(dto.Username))
+                return BadRequest(new { message = "El nombre de usuario es requerido." });
 
-            var result = await _authService.SendNewPasswordAsync(username);
+            var result = await _authService.SendNewPasswordAsync(dto.Username);
 
             if (!result.Success)
                 return BadRequest(new { message = result.ErrorMessage });
@@ -136,4 +136,7 @@ namespace ApiGestionTurnosMedicos.Controllers
             return Ok(new { message = "Email enviado con éxito", enviado = 1 });
         }
     }
+
+    // DTO auxiliar para evitar problemas de parseo en ForgotPassword
+    public class ForgotPasswordDto { public string Username { get; set; } = string.Empty; }
 }

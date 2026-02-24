@@ -1,101 +1,67 @@
 ﻿using DataAccess.Data;
-using System;
-using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using ApiGestionTurnosMedicos.CustomModels;
 using DataAccess.Context;
 
 namespace DataAccess.Repository
 {
     public class EspecialidadRepository
     {
-
-        #region ContextDataBase
         private readonly GestionTurnosContext _context;
 
         public EspecialidadRepository(GestionTurnosContext context)
         {
             _context = context;
         }
-        #endregion
 
-        public List<Especialidad> GetAllEspecialidades()
+        // LISTAR TODO (Lo que usas en el Admin)
+        public async Task<List<Especialidad>> GetAllEspecialidadesAsync()
         {
-            List<Especialidad> specialty = new List<Especialidad>();
-            using (_context)
-            {
-                specialty = _context.Especialidades
-                                .OrderBy(e => e.Nombre)
-                                .ToList();
-            }
-
-            return specialty;
-        }
-
-
-        public Especialidad GetSpecialtyForId(int id)
-        {
-            Especialidad oSpecialty = new Especialidad();
-
-            oSpecialty = _context.Especialidades.Find(id);
-            return oSpecialty;
-        }
-
-
-        public void CreateSpecialty(Especialidad oSpecialty)
-        {
-            using(_context)
-            {
-                _context.Add(oSpecialty);
-                _context.SaveChanges();
-            }
-        }
-
-        public void UpdateSpecialty(Especialidad oSpecialty)
-        {
-            using (_context)
-            {
-                _context.Entry(oSpecialty).State = EntityState.Modified;
-                _context.SaveChanges();
-
-            }
-        }
-
-        public void DeleteSpecialty(Especialidad oSpecialty)
-        {
-            using (_context)
-            {
-                _context.Especialidades.Remove(oSpecialty);
-                _context.SaveChanges();
-
-            }
-        }
-
-        public bool VerifyIfSpecialtyExist(int id)
-        {
-            return _context.Especialidades.Where(s => s.Id == id).Any();
-        }
-
-        public List<Especialidad> ReturnCoveredSpecialties()
-        {
-            //List<Especialidad> specialties =
-            //    (from e in _context.Especialidades
-            //     join m in _context.Medicos
-            //     on e.Id equals m.EspecialidadId
-            //     group e by e.Id into g
-            //     select g.First())
-            //    .OrderBy(e => e.Nombre)
-            //    .ToList();
-
-            List<Especialidad> specialties = _context.Especialidades
-                .Where(e => _context.Medicos.Any(m => m.EspecialidadId == e.Id)) 
+            // Quitamos el 'using' manual para que no rompa el ciclo de vida de la inyección
+            return await _context.Especialidades
                 .OrderBy(e => e.Nombre)
-                .ToList();
+                .ToListAsync();
+        }
 
-            return specialties;
+        // BUSCAR POR ID
+        public async Task<Especialidad?> GetSpecialtyForIdAsync(int id)
+        {
+            return await _context.Especialidades.FindAsync(id);
+        }
+
+        // CREAR
+        public async Task CreateSpecialtyAsync(Especialidad oSpecialty)
+        {
+            await _context.Especialidades.AddAsync(oSpecialty);
+            await _context.SaveChangesAsync();
+        }
+
+        // ACTUALIZAR
+        public async Task UpdateSpecialtyAsync(Especialidad oSpecialty)
+        {
+            _context.Entry(oSpecialty).State = EntityState.Modified;
+            await _context.SaveChangesAsync();
+        }
+
+        // ELIMINAR (Recibiendo el objeto como hacías antes)
+        public async Task DeleteSpecialtyAsync(Especialidad oSpecialty)
+        {
+            _context.Especialidades.Remove(oSpecialty);
+            await _context.SaveChangesAsync();
+        }
+
+        // VERIFICAR EXISTENCIA
+        public async Task<bool> VerifyIfSpecialtyExistAsync(int id)
+        {
+            return await _context.Especialidades.AnyAsync(s => s.Id == id);
+        }
+
+        // EL MÉTODO QUE MENCIONASTE: Especialidades con Médicos
+        public async Task<List<Especialidad>> ReturnCoveredSpecialtiesAsync()
+        {
+            return await _context.Especialidades
+                .Where(e => _context.Medicos.Any(m => m.EspecialidadId == e.Id))
+                .OrderBy(e => e.Nombre)
+                .ToListAsync();
         }
     }
 }

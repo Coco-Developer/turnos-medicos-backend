@@ -1,39 +1,46 @@
-﻿using DataAccess.Context;
-using DataAccess.Data;
+﻿using DataAccess.Data;
+using DataAccess.Repository;
 using Microsoft.AspNetCore.Identity;
 using Models.CustomModels;
-
+using Microsoft.EntityFrameworkCore;
 
 namespace BusinessLogic.AppLogic.Services
 {
     public class AdminSetupService
     {
-        private readonly GestionTurnosContext _context;
+        private readonly IUserRepository _userRepository;
         private readonly IPasswordHasher<Usuario> _passwordHasher;
 
-        public AdminSetupService(GestionTurnosContext context, IPasswordHasher<Usuario> passwordHasher)
+        public AdminSetupService(IUserRepository userRepository, IPasswordHasher<Usuario> passwordHasher)
         {
-            _context = context;
+            _userRepository = userRepository;
             _passwordHasher = passwordHasher;
         }
 
         public async Task<(bool success, string message)> CrearAdminAsync(AdminRegisterDto dto)
         {
-            if (_context.Usuario.Any(u => u.Username == dto.Nombre))
+            // Normalización: Usamos el repositorio en lugar del contexto directo
+            var existe = await _userRepository.GetByUsernameAsync(dto.Nombre);
+            if (existe != null)
                 return (false, "El usuario ya existe.");
 
             var usuario = new Usuario
             {
                 Username = dto.Nombre,
                 IsActive = true,
+                // Usamos el hasher de Identity
                 PasswordHash = _passwordHasher.HashPassword(null!, dto.Password),
-                Rol = UserRoles.Admin,  // Asignamos el rol de "Admin"
+                Rol = UserRoles.Admin,
                 Email = dto.Email
             };
 
-            _context.Usuario.Add(usuario);
-            await _context.SaveChangesAsync();
-            return (true, "Usuario admin creado correctamente.");
+            await _userRepository.AddAsync(usuario);
+            bool guardado = await _userRepository.SaveChangesAsync();
+
+            if (guardado)
+                return (true, "Usuario admin creado correctamente.");
+
+            return (false, "No se pudo guardar el usuario en la base de datos.");
         }
     }
 }

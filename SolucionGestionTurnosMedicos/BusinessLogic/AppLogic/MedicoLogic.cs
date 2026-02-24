@@ -2,11 +2,10 @@
 using DataAccess.Context;
 using DataAccess.Data;
 using DataAccess.Repository;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace BusinessLogic.AppLogic
@@ -22,20 +21,22 @@ namespace BusinessLogic.AppLogic
         }
         #endregion
 
-        public List<Medico> DoctorList()
+        public async Task<List<Medico>> DoctorList()
         {
             MedicoRepository repDoctor = new(_context);
-            return repDoctor.GetAllDoctors();
+            return await repDoctor.GetAllDoctors();
         }
 
-        public Medico GetDoctorForId(int id)
+        public async Task<Medico> GetDoctorForId(int id)
         {
             try
             {
                 MedicoRepository repDoctor = new(_context);
-                Medico oDoctorFound = repDoctor.GetDoctorForId(id, repDoctor.Get_context()) ?? throw new ArgumentException("No doctor was found with that id");
+                // Mantenemos tu firma original pasando el contexto
+                Medico oDoctorFound = await repDoctor.GetDoctorForId(id, _context) ?? throw new ArgumentException("No doctor was found with that id");
+
                 // Obtener y asignar los horarios
-                oDoctorFound.Horarios = repDoctor.GetHorarioDoctorForId(id);
+                oDoctorFound.Horarios = await repDoctor.GetHorarioDoctorForId(id);
                 return oDoctorFound;
             }
             catch (Exception e)
@@ -45,13 +46,13 @@ namespace BusinessLogic.AppLogic
             }
         }
 
-        public void CreateDoctor(Medico oDoctor, List<HorarioMedico> horarios)
+        public async Task CreateDoctor(Medico oDoctor, List<HorarioMedico> horarios)
         {
             MedicoRepository repDoctor = new(_context);
 
             try
             {
-                repDoctor.CreateDoctor(oDoctor, horarios);
+                await repDoctor.CreateDoctor(oDoctor, horarios);
             }
             catch (Exception e)
             {
@@ -59,42 +60,33 @@ namespace BusinessLogic.AppLogic
                 throw;
             }
         }
-        
 
-        public void UpdateDoctor(int id, MedicoCustom oDoctor)
+        public async Task UpdateDoctor(int id, MedicoCustom oDoctor)
         {
             MedicoRepository repDoctor = new(_context);
-            MedicoCustom doctorCustom = new();
 
             try
             {
-                Medico oDoctorFound = repDoctor.GetDoctorForId(id, repDoctor.Get_context()) ?? throw new ArgumentException("No doctor was found with that id");
+                // Mantenemos Get_context() tal como estaba en tu código
+                Medico oDoctorFound = await repDoctor.GetDoctorForId(id, repDoctor.Get_context()) ?? throw new ArgumentException("No doctor was found with that id");
 
                 oDoctorFound.Nombre = oDoctor.Nombre;
                 oDoctorFound.Apellido = oDoctor.Apellido;
                 oDoctorFound.Dni = oDoctor.Dni;
-                
                 oDoctorFound.Telefono = oDoctor.Telefono;
                 oDoctorFound.Direccion = oDoctor.Direccion;
                 oDoctorFound.EspecialidadId = oDoctor.EspecialidadId;
                 oDoctorFound.FechaAltaLaboral = oDoctor.FechaAltaLaboral;
-                //oDoctorFound.HorarioAtencionInicio = doctorCustom.ModifyStartTime(oDoctor.HorarioAtencionInicio);
-                //oDoctorFound.HorarioAtencionFin = doctorCustom.ModifyEndTime(oDoctor.HorarioAtencionFin);
 
                 oDoctorFound.Foto = string.IsNullOrEmpty(oDoctor.Foto) ? oDoctorFound.Foto : Convert.FromBase64String(oDoctor.Foto);
                 oDoctorFound.Matricula = oDoctor.Matricula;
 
                 foreach (var horario in oDoctor.Horarios)
                 {
-                    //horario.MedicoId = oDoctorFound.Id;
-                    //_context.HorariosMedicos.Update(horario);
+                    // Cambiamos a FirstOrDefaultAsync para no bloquear el hilo
+                    var horarioExistente = await _context.HorariosMedicos
+                        .FirstOrDefaultAsync(h => h.DiaSemana == horario.DiaSemana && h.MedicoId == oDoctorFound.Id);
 
-
-                    // Buscar si el horario ya existe en la base de datos
-                    var horarioExistente = _context.HorariosMedicos
-                        .FirstOrDefault(h => h.DiaSemana == horario.DiaSemana && h.MedicoId == oDoctorFound.Id);
-
-                    // Si alguno de los valores es nulo, eliminar el registro si existe
                     if (horario.HorarioAtencionInicio == null || horario.HorarioAtencionFin == null)
                     {
                         if (horarioExistente != null)
@@ -104,22 +96,20 @@ namespace BusinessLogic.AppLogic
                         continue;
                     }
 
-                    // Si el registro existe, actualizarlo; si no, agregarlo
                     if (horarioExistente != null)
                     {
-                        // Sólo actualizar los campos necesarios
                         horarioExistente.HorarioAtencionInicio = horario.HorarioAtencionInicio;
                         horarioExistente.HorarioAtencionFin = horario.HorarioAtencionFin;
                     }
                     else
                     {
-                        horario.Id = 0; // Asegurarse de que se trate como un nuevo registro
-                        horario.MedicoId = oDoctorFound.Id; // Por las dudas
-                        _context.HorariosMedicos.Add(horario);
+                        horario.Id = 0;
+                        horario.MedicoId = oDoctorFound.Id;
+                        await _context.HorariosMedicos.AddAsync(horario);
                     }
                 }
 
-                repDoctor.UpdateDoctor(oDoctorFound);
+                await repDoctor.UpdateDoctor(oDoctorFound);
             }
             catch (Exception e)
             {
@@ -128,14 +118,14 @@ namespace BusinessLogic.AppLogic
             }
         }
 
-        public void DeleteDoctor(int id)
+        public async Task DeleteDoctor(int id)
         {
             MedicoRepository repDoctor = new(_context);
 
             try
             {
-                Medico oDoctorFound = repDoctor.GetDoctorForId(id, repDoctor.Get_context()) ?? throw new ArgumentException("No doctor was found with that id");
-                repDoctor.DeleteDoctor(oDoctorFound);
+                Medico oDoctorFound = await repDoctor.GetDoctorForId(id, repDoctor.Get_context()) ?? throw new ArgumentException("No doctor was found with that id");
+                await repDoctor.DeleteDoctor(oDoctorFound);
             }
             catch (Exception e)
             {
@@ -144,7 +134,7 @@ namespace BusinessLogic.AppLogic
             }
         }
 
-        public List<Medico> FindDoctorForSpecialty(int id)
+        public async Task<List<Medico>> FindDoctorForSpecialty(int id)
         {
             MedicoRepository repDoctor = new(_context);
 
@@ -155,15 +145,7 @@ namespace BusinessLogic.AppLogic
 
             try
             {
-                List<Medico> doctors = repDoctor.FindDoctorForSpecialty(id);
-
-                if (doctors.Count == 0)
-                {
-                    // En lugar de lanzar una excepción, simplemente devuelve una lista vacía.
-                    return doctors;
-                }
-
-                return doctors;
+                return await repDoctor.FindDoctorForSpecialty(id);
             }
             catch (Exception e)
             {
@@ -172,44 +154,42 @@ namespace BusinessLogic.AppLogic
             }
         }
 
-        public List<MedicoCustom> ReturnAllDoctorsWithOurSpecialty()
+        public async Task<List<MedicoCustom>> ReturnAllDoctorsWithOurSpecialty()
         {
             MedicoRepository repDoctor = new(_context);
 
             try
             {
-                return repDoctor.ReturnAllDoctorsWithOurSpecialty();
+                return await repDoctor.ReturnAllDoctorsWithOurSpecialty();
             }
             catch (Exception e)
             {
                 Console.WriteLine(e.ToString());
                 throw;
             }
-
         }
 
-        public int GetDoctorsQty()
+        public async Task<int> GetDoctorsQty()
         {
             MedicoRepository repDoctor = new(_context);
 
             try
             {
-                return repDoctor.GetQtyDoctors();
+                return await repDoctor.GetQtyDoctors();
             }
             catch (Exception e)
             {
                 Console.WriteLine(e.ToString());
                 throw;
             }
-
         }
 
-        public List<HorarioMedico> GetScheduleForDoctor(int id)
+        public async Task<List<HorarioMedico>> GetScheduleForDoctor(int id)
         {
             MedicoRepository repDoctor = new(_context);
             try
             {
-                return repDoctor.GetHorariosForDoctor(id);
+                return await repDoctor.GetHorariosForDoctor(id);
             }
             catch (Exception e)
             {
@@ -218,11 +198,10 @@ namespace BusinessLogic.AppLogic
             }
         }
 
-        public List<DateTime> GetFullScheduleForDoctor(int id)
+        public async Task<List<DateTime>> GetFullScheduleForDoctor(int id)
         {
             MedicoRepository repDoctor = new(_context);
-
-            return repDoctor.GetTurnosOcupados(id);
+            return await repDoctor.GetTurnosOcupados(id);
         }
     }
 }

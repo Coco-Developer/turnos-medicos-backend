@@ -1,8 +1,10 @@
-﻿using BusinessLogic.AppLogic;
+﻿using ApiGestionTurnosMedicos.Validations;
+using BusinessLogic.AppLogic;
 using DataAccess.Context;
 using DataAccess.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Models.CustomModels;
 
 namespace ApiGestionTurnosMedicos.Controllers
 {
@@ -13,19 +15,22 @@ namespace ApiGestionTurnosMedicos.Controllers
     {
         private readonly EspecialidadLogic _eLogic;
         private readonly ILogger<EspecialidadController> _logger;
+        private readonly GestionTurnosContext _context;
 
-        public EspecialidadController(GestionTurnosContext context, ILogger<EspecialidadController> logger)
+        public EspecialidadController(EspecialidadLogic eLogic, ILogger<EspecialidadController> logger, GestionTurnosContext context)
         {
-            _eLogic = new EspecialidadLogic(context);
+            _eLogic = eLogic;
             _logger = logger;
+            _context = context;
         }
 
         [HttpGet]
-        public ActionResult<List<Especialidad>> Get()
+        public async Task<ActionResult<List<Especialidad>>> Get()
         {
             try
             {
-                return Ok(_eLogic.SpecialtyList());
+                var list = await _eLogic.SpecialtyListAsync();
+                return Ok(list);
             }
             catch (Exception ex)
             {
@@ -35,14 +40,11 @@ namespace ApiGestionTurnosMedicos.Controllers
         }
 
         [HttpGet("{id}")]
-        public ActionResult<Especialidad> Get(int id)
+        public async Task<ActionResult<Especialidad>> Get(int id)
         {
             try
             {
-                var especialidad = _eLogic.GetSpecialtyForId(id);
-                if (especialidad == null)
-                    return NotFound(new { message = "Especialidad no encontrada" });
-
+                var especialidad = await _eLogic.GetSpecialtyForIdAsync(id);
                 return Ok(especialidad);
             }
             catch (Exception ex)
@@ -53,12 +55,17 @@ namespace ApiGestionTurnosMedicos.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Admin")]
-        public IActionResult Post([FromBody] Especialidad oEspecialidad)
+        [Authorize(Roles = UserRoles.Admin)]
+        public async Task<IActionResult> Post([FromBody] Especialidad oEspecialidad)
         {
             try
             {
-                _eLogic.CreateSpecialty(oEspecialidad);
+                // Ejemplo de cómo integrar validaciones si las tuvieras para Especialidad:
+                // var validations = new ValidationsMethodPost(_context);
+                // var validationResult = await validations.ValidationsMethodPostSpecialty(oEspecialidad);
+                // if (!validationResult.IsValid) return BadRequest(new { message = validationResult.ErrorMessage });
+
+                await _eLogic.CreateSpecialtyAsync(oEspecialidad);
                 _logger.LogInformation("Especialidad creada: {Nombre}", oEspecialidad.Nombre);
                 return Ok(new { message = "Especialidad creada correctamente" });
             }
@@ -70,12 +77,12 @@ namespace ApiGestionTurnosMedicos.Controllers
         }
 
         [HttpPut("{id}")]
-        [Authorize(Roles = "Admin")]
-        public IActionResult Put(int id, [FromBody] Especialidad oEspecialidad)
+        [Authorize(Roles = UserRoles.Admin)]
+        public async Task<IActionResult> Put(int id, [FromBody] Especialidad oEspecialidad)
         {
             try
             {
-                _eLogic.UpdateSpecialty(id, oEspecialidad);
+                await _eLogic.UpdateSpecialtyAsync(id, oEspecialidad);
                 _logger.LogInformation("Especialidad ID {Id} actualizada", id);
                 return Ok(new { message = "Especialidad actualizada correctamente" });
             }
@@ -87,12 +94,12 @@ namespace ApiGestionTurnosMedicos.Controllers
         }
 
         [HttpDelete("{id}")]
-        [Authorize(Roles = "Admin")]
-        public IActionResult Delete(int id)
+        [Authorize(Roles = UserRoles.Admin)]
+        public async Task<IActionResult> Delete(int id)
         {
             try
             {
-                _eLogic.DeleteSpecialty(id);
+                await _eLogic.DeleteSpecialtyAsync(id);
                 _logger.LogInformation("Especialidad ID {Id} eliminada", id);
                 return Ok(new { message = "Especialidad eliminada correctamente" });
             }
@@ -104,11 +111,12 @@ namespace ApiGestionTurnosMedicos.Controllers
         }
 
         [HttpGet("list-covered-specialty")]
-        public ActionResult<List<Especialidad>> GetListCoveredSpecialty()
+        public async Task<ActionResult<List<Especialidad>>> GetListCoveredSpecialty()
         {
             try
             {
-                return Ok(_eLogic.CoveredSpecialtyList());
+                var list = await _eLogic.CoveredSpecialtyListAsync();
+                return Ok(list);
             }
             catch (Exception ex)
             {

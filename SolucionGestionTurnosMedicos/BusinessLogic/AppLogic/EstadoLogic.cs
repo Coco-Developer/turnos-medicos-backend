@@ -1,7 +1,9 @@
 ﻿using DataAccess.Context;
 using DataAccess.Data;
 using DataAccess.Repository;
+using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace BusinessLogic.AppLogic
 {
@@ -16,71 +18,89 @@ namespace BusinessLogic.AppLogic
         }
         #endregion
 
+        // Lista de estados permitidos según tu regla de negocio
         private readonly List<string> _validStates = new List<string>
         {
             "Activo",
             "Cancelado",
-            "Realizado"/*,
+            "Realizado",
             "Ausente",
-            "Cancelado",
-            "Reprogramado"*/
+            "Reprogramado",
+            "Agendado",
+            "En Curso",
+            "Finalizado"
         };
 
-        public static string UpperFirstLetter(string input)
+        private static string UpperFirstLetter(string input)
         {
-            return char.ToUpper(input[0]) + input.Substring(1);
+            if (string.IsNullOrEmpty(input)) return input;
+            return char.ToUpper(input[0]) + input.Substring(1).ToLower();
         }
 
-        public List<Estado> GetAllEstados()
+        public async Task<List<Estado>> GetAllEstadosAsync()
         {
-            EstadoRepository repEstado = new EstadoRepository(_context);
-            return repEstado.GetAllEstados();
+            var repEstado = new EstadoRepository(_context);
+            return await repEstado.GetAllEstadosAsync();
         }
 
-        public Estado GetEstadoById(int id)
+        public async Task<Estado> GetEstadoByIdAsync(int id)
         {
             if (id <= 0) throw new ArgumentException("Id must be greater than 0");
 
-            EstadoRepository repEstado = new EstadoRepository(_context);
-            Estado estado = repEstado.GetEstadoById(id);
-            if (estado == null) throw new ArgumentException("No state found with the provided id");
+            var repEstado = new EstadoRepository(_context);
+            var estado = await repEstado.GetEstadoByIdAsync(id);
+
+            if (estado == null)
+                throw new KeyNotFoundException("No state found with the provided id");
 
             return estado;
         }
 
-        public void CreateEstado(Estado estado)
+        public async Task CreateEstadoAsync(Estado estado)
         {
-            if (string.IsNullOrWhiteSpace(estado.Nombre)) throw new ArgumentException("The name field must be filled");
-            if (!_validStates.Contains(UpperFirstLetter(estado.Nombre))) throw new ArgumentException("Invalid state name, only admit `AGENDADO` - `REPROGRAMADO` - `EN CURSO` - `CANCELADO` - `AUSENTE` - `FINALIZADO`");
+            if (string.IsNullOrWhiteSpace(estado.Nombre))
+                throw new ArgumentException("The name field must be filled");
 
-            EstadoRepository repEstado = new EstadoRepository(_context);
-            repEstado.CreateEstado(estado);
+            string normalizedName = UpperFirstLetter(estado.Nombre);
+
+            if (!_validStates.Contains(normalizedName))
+                throw new ArgumentException($"Invalid state name. Allowed: {string.Join(", ", _validStates)}");
+
+            var repEstado = new EstadoRepository(_context);
+            estado.Nombre = normalizedName; // Guardamos siempre normalizado
+            await repEstado.CreateEstadoAsync(estado);
         }
 
-        public void UpdateEstado(int id, Estado estado)
+        public async Task UpdateEstadoAsync(int id, Estado estado)
         {
             if (id <= 0) throw new ArgumentException("Id must be greater than 0");
             if (string.IsNullOrWhiteSpace(estado.Nombre)) throw new ArgumentException("The name field must be filled");
-            if (!_validStates.Contains(estado.Nombre)) throw new ArgumentException("Invalid state name");
 
-            EstadoRepository repEstado = new EstadoRepository(_context);
-            Estado existingEstado = repEstado.GetEstadoById(id);
-            if (existingEstado == null) throw new ArgumentException("No state found with the provided id");
+            var repEstado = new EstadoRepository(_context);
+            var existingEstado = await repEstado.GetEstadoByIdAsync(id);
 
-            existingEstado.Nombre = estado.Nombre;
-            repEstado.UpdateEstado(existingEstado);
+            if (existingEstado == null)
+                throw new KeyNotFoundException("No state found with the provided id");
+
+            string normalizedName = UpperFirstLetter(estado.Nombre);
+            if (!_validStates.Contains(normalizedName))
+                throw new ArgumentException("Invalid state name");
+
+            existingEstado.Nombre = normalizedName;
+            await repEstado.UpdateEstadoAsync(existingEstado);
         }
 
-        public void DeleteEstado(int id)
+        public async Task DeleteEstadoAsync(int id)
         {
             if (id <= 0) throw new ArgumentException("Id must be greater than 0");
 
-            EstadoRepository repEstado = new EstadoRepository(_context);
-            Estado estado = repEstado.GetEstadoById(id);
-            if (estado == null) throw new ArgumentException("No state found with the provided id");
+            var repEstado = new EstadoRepository(_context);
+            var estado = await repEstado.GetEstadoByIdAsync(id);
 
-            repEstado.DeleteEstado(estado);
+            if (estado == null)
+                throw new KeyNotFoundException("No state found with the provided id");
+
+            await repEstado.DeleteEstadoAsync(estado);
         }
     }
 }
-

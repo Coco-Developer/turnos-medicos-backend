@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using Models.CustomModels;
-
+using BusinessLogic.AppLogic.Services;
 
 namespace BusinessLogic.AppLogic.Services
 {
@@ -17,15 +17,18 @@ namespace BusinessLogic.AppLogic.Services
         private readonly IUserRepository _userRepository;
         private readonly IPasswordHasher<Usuario> _passwordHasher;
         private readonly IConfiguration _configuration;
+        private readonly EmailService _emailService; // Usamos tu clase EmailService
 
         public AuthService(
             IUserRepository userRepository,
             IPasswordHasher<Usuario> passwordHasher,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            EmailService emailService) // Inyectado vía DI
         {
             _userRepository = userRepository;
             _passwordHasher = passwordHasher;
             _configuration = configuration;
+            _emailService = emailService;
         }
 
         public async Task<LoginResponseDto> LoginAsync(LoginRequestDto dto)
@@ -62,8 +65,8 @@ namespace BusinessLogic.AppLogic.Services
             {
                 new Claim(JwtRegisteredClaimNames.Sub, user.Username),
                 new Claim("userId", user.Id.ToString()),
-                new Claim(ClaimTypes.Role, user.Rol ?? UserRoles.Paciente),  // Rol con default en caso de que no exista
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())  // ID del usuario en el claim
+                new Claim(ClaimTypes.Role, user.Rol ?? UserRoles.Paciente),
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())
             };
 
             var token = new JwtSecurityToken(
@@ -75,7 +78,7 @@ namespace BusinessLogic.AppLogic.Services
             );
             var tokenStr = new JwtSecurityTokenHandler().WriteToken(token);
 
-            // 4. Devolver respuesta con token y datos del usuario
+            // 4. Devolver respuesta
             return new LoginResponseDto
             {
                 Success = true,
@@ -85,13 +88,11 @@ namespace BusinessLogic.AppLogic.Services
             };
         }
 
-        // Implementación de GetUserByIdAsync
         public async Task<Usuario?> GetUserByIdAsync(int userId)
         {
             return await _userRepository.GetByIdAsync(userId);
         }
 
-        // Cambiar contraseña
         public async Task<(bool Success, string? ErrorMessage)> ChangePasswordAsync(int userId, string currentPassword, string newPassword)
         {
             var user = await _userRepository.GetByIdTrackingAsync(userId);
@@ -104,10 +105,8 @@ namespace BusinessLogic.AppLogic.Services
 
             user.PasswordHash = _passwordHasher.HashPassword(user, newPassword);
 
-            
             var changes = await _userRepository.SaveChangesAsync();
-
-            if (changes == false)
+            if (!changes)
                 return (false, "No se guardaron cambios en la base");
 
             return (true, null);
@@ -115,21 +114,21 @@ namespace BusinessLogic.AppLogic.Services
 
         public async Task<(bool Success, string? ErrorMessage)> SendNewPasswordAsync(string username)
         {
-            var user = await _userRepository.GetByUsernameAsync(username); // Nuevo método en repo
+            var user = await _userRepository.GetByUsernameAsync(username);
             if (user == null)
                 return (false, "Usuario no encontrado");
 
             // Generar nueva contraseña aleatoria
-            var newPassword = GenerateRandomPassword(); // <- Esta función no existe aún
+            var newPassword = GenerateRandomPassword();
             user.PasswordHash = _passwordHasher.HashPassword(user, newPassword);
+
             // Guardar cambios
             var changes = await _userRepository.SaveChangesAsync();
             if (!changes)
                 return (false, "No se guardaron cambios en la base");
 
-            // Enviar email con la nueva contraseña
-            var emailService = new EmailService(new SmtpEmailSender());
-            emailService.SendPasswordResetEmail(user.Email, newPassword);
+            // Normalización: En lugar de 'new EmailService', usamos la instancia inyectada
+            _emailService.SendPasswordResetEmail(user.Email, newPassword);
 
             return (true, null);
         }
@@ -137,7 +136,7 @@ namespace BusinessLogic.AppLogic.Services
         private string GenerateRandomPassword()
         {
             const string validChars = "ABCDEFGHJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-            var randomBytes = new byte[8]; // 8 caracteres
+            var randomBytes = new byte[8];
             using (var rng = RandomNumberGenerator.Create())
             {
                 rng.GetBytes(randomBytes);
@@ -151,6 +150,5 @@ namespace BusinessLogic.AppLogic.Services
 
             return new string(chars);
         }
-
     }
 }

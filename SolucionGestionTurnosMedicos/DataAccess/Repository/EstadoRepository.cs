@@ -15,49 +15,43 @@ namespace DataAccess.Repository
         }
         #endregion
 
-        public List<Estado> GetAllEstados()
+        // Obtener todos los estados (Asíncrono y sin Dispose manual)
+        public async Task<List<Estado>> GetAllEstadosAsync()
         {
-            using (_context)
-            {
-                return _context.Estados.ToList();
-            }
+            return await _context.Estados.ToListAsync();
         }
 
-        public Estado? GetEstadoById(int id)
+        // Obtener por ID
+        public async Task<Estado?> GetEstadoByIdAsync(int id)
         {
-            return _context.Estados.Find(id);
+            return await _context.Estados.FindAsync(id);
         }
 
-        public void CreateEstado(Estado oState)
+        // Crear nuevo estado
+        public async Task CreateEstadoAsync(Estado oState)
         {
-            using (_context)
-            {
-                _context.Estados.Add(oState);
-                _context.SaveChanges();
-            }
+            await _context.Estados.AddAsync(oState);
+            await _context.SaveChangesAsync();
         }
 
-        public void UpdateEstado(Estado oState)
+        // Actualizar estado existente
+        public async Task UpdateEstadoAsync(Estado oState)
         {
-            using (_context)
-            {
-                _context.Entry(oState).State = EntityState.Modified;
-                _context.SaveChanges();
-            }
+            _context.Entry(oState).State = EntityState.Modified;
+            await _context.SaveChangesAsync();
         }
 
-        public void DeleteEstado(Estado oState)
+        // Eliminar estado
+        public async Task DeleteEstadoAsync(Estado oState)
         {
-            using (_context)
-            {
-                _context.Estados.Remove(oState);
-                _context.SaveChanges();
-            }
+            _context.Estados.Remove(oState);
+            await _context.SaveChangesAsync();
         }
 
-        public bool VerifyIfStateExist(int id)
+        // Verificar existencia (Asíncrono)
+        public async Task<bool> VerifyIfStateExistAsync(int id)
         {
-            return _context.Estados.Where(e  => e.Id == id).Any();
+            return await _context.Estados.AnyAsync(e => e.Id == id);
         }
     }
 }

@@ -1,12 +1,7 @@
 ﻿using DataAccess.Context;
 using DataAccess.Data;
 using DataAccess.Repository;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 
 namespace BusinessLogic.AppLogic
 {
@@ -21,61 +16,64 @@ namespace BusinessLogic.AppLogic
         }
         #endregion
 
-        public List<Especialidad> SpecialtyList()
+        public async Task<List<Especialidad>> SpecialtyListAsync()
         {
-            EspecialidadRepository repSpecialty = new EspecialidadRepository(_context);
-            return repSpecialty.GetAllEspecialidades();
+            var repSpecialty = new EspecialidadRepository(_context);
+            return await repSpecialty.GetAllEspecialidadesAsync();
         }
 
-        public Especialidad GetSpecialtyForId(int id)
+        public async Task<Especialidad> GetSpecialtyForIdAsync(int id)
         {
             if (id == 0) throw new ArgumentException("Id cannot be 0");
 
             try
             {
-                EspecialidadRepository repSpecialty = new EspecialidadRepository(_context);
-                Especialidad oSpecialtyFound = repSpecialty.GetSpecialtyForId(id) ?? throw new ArgumentException("No specialty was found with that id");
-                return oSpecialtyFound;
+                var repSpecialty = new EspecialidadRepository(_context);
+                var oSpecialtyFound = await repSpecialty.GetSpecialtyForIdAsync(id);
+
+                return oSpecialtyFound ?? throw new KeyNotFoundException("No specialty was found with that id");
             }
-            catch(Exception e)
+            catch (Exception e)
             {
                 Console.WriteLine($"Processing failed: {e.Message}");
                 throw;
             }
         }
 
-        public void CreateSpecialty(Especialidad oSpecialty)
+        public async Task CreateSpecialtyAsync(Especialidad oSpecialty)
         {
-            EspecialidadRepository repSpecialty = new EspecialidadRepository(_context);
+            var repSpecialty = new EspecialidadRepository(_context);
 
             #region Validations
+            if (string.IsNullOrWhiteSpace(oSpecialty.Nombre))
+                throw new ArgumentException("The name field must be filled");
 
-            if (string.IsNullOrWhiteSpace(oSpecialty.Nombre)) throw new ArgumentException("The name field must be filled");
-
-            if(!Regex.IsMatch(oSpecialty.Nombre, @"^[a-zA-Z\s]+$")) throw new ArgumentException("The name can only contain letters and spaces");
-
+            if (!Regex.IsMatch(oSpecialty.Nombre, @"^[a-zA-Z\s]+$"))
+                throw new ArgumentException("The name can only contain letters and spaces");
             #endregion
 
             try
             {
-                repSpecialty.CreateSpecialty(oSpecialty);
+                await repSpecialty.CreateSpecialtyAsync(oSpecialty);
             }
-            catch (Exception e) 
-            { 
-                Console.WriteLine(e.ToString()); 
-                throw; 
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+                throw;
             }
         }
 
-        public void UpdateSpecialty(int id, Especialidad oSpecialty)
+        public async Task UpdateSpecialtyAsync(int id, Especialidad oSpecialty)
         {
-            EspecialidadRepository repSpecialty = new EspecialidadRepository(_context);
+            var repSpecialty = new EspecialidadRepository(_context);
 
             try
             {
-                Especialidad oSpecialtyFound = repSpecialty.GetSpecialtyForId(id) ?? throw new ArgumentException("No specialty was found with that id");
+                var oSpecialtyFound = await repSpecialty.GetSpecialtyForIdAsync(id)
+                    ?? throw new KeyNotFoundException("No specialty was found with that id");
+
                 oSpecialtyFound.Nombre = oSpecialty.Nombre;
-                repSpecialty.UpdateSpecialty(oSpecialtyFound);
+                await repSpecialty.UpdateSpecialtyAsync(oSpecialtyFound);
             }
             catch (Exception e)
             {
@@ -84,14 +82,16 @@ namespace BusinessLogic.AppLogic
             }
         }
 
-        public void DeleteSpecialty(int id)
+        public async Task DeleteSpecialtyAsync(int id)
         {
-            EspecialidadRepository repSpecialty = new EspecialidadRepository(_context);
+            var repSpecialty = new EspecialidadRepository(_context);
 
             try
             {
-                Especialidad oSpecialtyFound = repSpecialty.GetSpecialtyForId(id) ?? throw new ArgumentException("No specialty was found with that id");
-                repSpecialty.DeleteSpecialty(oSpecialtyFound);
+                var oSpecialtyFound = await repSpecialty.GetSpecialtyForIdAsync(id)
+                    ?? throw new KeyNotFoundException("No specialty was found with that id");
+
+                await repSpecialty.DeleteSpecialtyAsync(oSpecialtyFound);
             }
             catch (Exception e)
             {
@@ -100,22 +100,19 @@ namespace BusinessLogic.AppLogic
             }
         }
 
-        public List<Especialidad> CoveredSpecialtyList()
+        public async Task<List<Especialidad>> CoveredSpecialtyListAsync()
         {
-            EspecialidadRepository repSpecialty = new EspecialidadRepository(_context);
+            var repSpecialty = new EspecialidadRepository(_context);
 
             try
             {
-                return repSpecialty.ReturnCoveredSpecialties();
+                return await repSpecialty.ReturnCoveredSpecialtiesAsync();
             }
             catch (Exception e)
             {
                 Console.WriteLine(e.ToString());
                 throw;
             }
-
-
         }
-
     }
 }
