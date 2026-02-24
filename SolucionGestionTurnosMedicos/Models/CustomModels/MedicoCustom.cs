@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using DataAccess.Data;
 
-namespace Models.CustomModels // Usaremos este namespace para ser consistentes
+namespace Models.CustomModels
 {
     public class MedicoCustom
     {
@@ -17,12 +17,9 @@ namespace Models.CustomModels // Usaremos este namespace para ser consistentes
         public virtual ICollection<HorarioMedico> Horarios { get; set; } = new List<HorarioMedico>();
         public string? Foto { get; set; }
         public string? Matricula { get; set; }
-
-        // CORRECCIÓN: Esta es la propiedad que te faltaba
         public string? Especialidad { get; set; }
     }
 
-    // CORRECCIÓN: Clase para que el compilador la encuentre
     public class MedicoConEspecialidad
     {
         public int Id { get; set; }
@@ -30,6 +27,7 @@ namespace Models.CustomModels // Usaremos este namespace para ser consistentes
         public string? Nombre { get; set; }
         public string? Especialidad { get; set; }
 
+        // ESTO ES LO QUE ESTÁ PIDIENDO EL EMAIL SERVICE:
         public string NombreCompletoMedico(string nombre, string apellido)
         {
             return $"{nombre} {apellido}";

@@ -1,10 +1,12 @@
-﻿using System.ComponentModel.DataAnnotations.Schema; 
-
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace DataAccess.Data
 {
+    [Table("Medico")]
     public class Medico
     {
+        [Key]
         public int Id { get; set; }
         public string? Apellido { get; set; }
         public string? Nombre { get; set; }
@@ -16,15 +18,12 @@ namespace DataAccess.Data
         public byte[]? Foto { get; set; }
         public string? Matricula { get; set; }
 
-
-        [Column("horario_atencion_inicio")] // Nombre exacto de la foto
+        [Column("horario_atencion_inicio")]
         public TimeSpan HorarioAtencionInicio { get; set; }
 
-        [Column("horario_atencion_fin")]    // Nombre exacto de la foto
+        [Column("horario_atencion_fin")]
         public TimeSpan HorarioAtencionFin { get; set; }
 
         public virtual ICollection<HorarioMedico> Horarios { get; set; } = new List<HorarioMedico>();
     }
-
-
 }
