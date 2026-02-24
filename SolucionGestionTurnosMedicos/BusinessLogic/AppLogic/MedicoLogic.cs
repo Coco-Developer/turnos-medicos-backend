@@ -73,9 +73,6 @@ namespace BusinessLogic.AppLogic
 
         public async Task CreateDoctor(MedicoCustom dto)
         {
-            // 1. Buscamos el primer horario para cumplir con las columnas NOT NULL de la tabla Medico en Azure
-            var primerHorario = dto.Horarios?.FirstOrDefault();
-
             var medico = new Medico
             {
                 Nombre = dto.Nombre,
@@ -85,18 +82,11 @@ namespace BusinessLogic.AppLogic
                 Direccion = dto.Direccion,
                 Dni = dto.Dni,
                 Telefono = dto.Telefono,
-                Matricula = dto.Matricula,
-
-                // Usamos .GetValueOrDefault para asegurar que no falle la conversión de TimeSpan? a TimeSpan
-                HorarioAtencionInicio = primerHorario != null
-                    ? primerHorario.HorarioAtencionInicio.GetValueOrDefault(new TimeSpan(8, 0, 0))
-                    : new TimeSpan(8, 0, 0),
-                HorarioAtencionFin = primerHorario != null
-                    ? primerHorario.HorarioAtencionFin.GetValueOrDefault(new TimeSpan(17, 0, 0))
-                    : new TimeSpan(17, 0, 0)
+                Matricula = dto.Matricula
+                // Aquí ya NO van los HorarioAtencionInicio/Fin
             };
 
-            // 2. Procesar Foto (Limpiando el prefijo Base64 si existe)
+            // Procesar Foto
             if (!string.IsNullOrWhiteSpace(dto.Foto))
             {
                 try
@@ -104,23 +94,18 @@ namespace BusinessLogic.AppLogic
                     string base64Data = dto.Foto.Contains(",") ? dto.Foto.Split(',')[1] : dto.Foto;
                     medico.Foto = Convert.FromBase64String(base64Data);
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Imagen Base64 inválida en CreateDoctor");
-                    medico.Foto = null;
-                }
+                catch { medico.Foto = null; }
             }
 
-            // 3. Mapeo de la lista de detalles (Relación 1:N) para la tabla HorarioMedico
+            // Mapeo de horarios a la tabla detalle
             var horarios = dto.Horarios?.Select(h => new HorarioMedico
             {
                 DiaSemana = h.DiaSemana,
-                // Aseguramos que no sean nulos para la base de datos
+                // Usamos GetValueOrDefault para evitar nulos en la tabla detalle
                 HorarioAtencionInicio = h.HorarioAtencionInicio.GetValueOrDefault(new TimeSpan(8, 0, 0)),
                 HorarioAtencionFin = h.HorarioAtencionFin.GetValueOrDefault(new TimeSpan(17, 0, 0))
             }).ToList() ?? new List<HorarioMedico>();
 
-            // 4. Persistencia
             await _repDoctor.CreateDoctor(medico, horarios);
         }
 

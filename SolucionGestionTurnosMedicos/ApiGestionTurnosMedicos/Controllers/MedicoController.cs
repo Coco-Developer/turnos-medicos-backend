@@ -155,6 +155,23 @@ namespace ApiGestionTurnosMedicos.Controllers
 
         #region EXTRA ENDPOINTS
 
+        [HttpGet("get-all-doctors")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> GetAllDoctorsCustom()
+        {
+            try
+            {
+                // Este es el método que devuelve MedicoCustom (con la especialidad en texto)
+                var doctors = await _medicoLogic.ReturnAllDoctorsWithOurSpecialty();
+                return Ok(doctors);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error en get-all-doctors");
+                return StatusCode(500, "Error interno");
+            }
+        }
+
         [HttpGet("list-for-specialty/{id:int}")]
         public async Task<IActionResult> GetListDoctorForSpecialty(int id)
         {
