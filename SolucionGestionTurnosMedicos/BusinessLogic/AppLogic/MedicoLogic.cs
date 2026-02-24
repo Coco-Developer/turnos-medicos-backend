@@ -73,6 +73,9 @@ namespace BusinessLogic.AppLogic
 
         public async Task CreateDoctor(MedicoCustom dto)
         {
+            // Sacamos el primer horario de la lista para llenar la tabla Medico
+            var primerHorario = dto.Horarios?.FirstOrDefault();
+
             var medico = new Medico
             {
                 Nombre = dto.Nombre,
@@ -82,11 +85,14 @@ namespace BusinessLogic.AppLogic
                 Direccion = dto.Direccion,
                 Dni = dto.Dni,
                 Telefono = dto.Telefono,
-                Matricula = dto.Matricula
-                // Aquí ya NO van los HorarioAtencionInicio/Fin
+                Matricula = dto.Matricula,
+
+                // IMPORTANTE: Aquí llenamos las columnas NOT NULL de la foto
+                // Si el front no manda nada, le ponemos un default para que no explote
+                HorarioAtencionInicio = primerHorario?.HorarioAtencionInicio ?? new TimeSpan(8, 0, 0),
+                HorarioAtencionFin = primerHorario?.HorarioAtencionFin ?? new TimeSpan(17, 0, 0)
             };
 
-            // Procesar Foto
             if (!string.IsNullOrWhiteSpace(dto.Foto))
             {
                 try
@@ -97,11 +103,10 @@ namespace BusinessLogic.AppLogic
                 catch { medico.Foto = null; }
             }
 
-            // Mapeo de horarios a la tabla detalle
+            // Mapeo para la tabla HorarioMedico (la otra tabla de la foto)
             var horarios = dto.Horarios?.Select(h => new HorarioMedico
             {
                 DiaSemana = h.DiaSemana,
-                // Usamos GetValueOrDefault para evitar nulos en la tabla detalle
                 HorarioAtencionInicio = h.HorarioAtencionInicio.GetValueOrDefault(new TimeSpan(8, 0, 0)),
                 HorarioAtencionFin = h.HorarioAtencionFin.GetValueOrDefault(new TimeSpan(17, 0, 0))
             }).ToList() ?? new List<HorarioMedico>();

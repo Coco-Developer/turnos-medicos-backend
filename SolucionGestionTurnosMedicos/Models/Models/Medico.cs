@@ -13,9 +13,12 @@
         public byte[]? Foto { get; set; }
         public string? Matricula { get; set; }
 
-     
-        public virtual ICollection<HorarioMedico> Horarios { get; set; } = new List<HorarioMedico>();
 
-     
+        public TimeSpan HorarioAtencionInicio { get; set; }
+        public TimeSpan HorarioAtencionFin { get; set; }
+
+        public virtual ICollection<HorarioMedico> Horarios { get; set; } = new List<HorarioMedico>();
     }
+
+
 }
