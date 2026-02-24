@@ -1,9 +1,8 @@
-﻿using ApiGestionTurnosMedicos.CustomModels;
+﻿using Models.CustomModels;
 using BusinessLogic;
 using DataAccess.Context;
 using DataAccess.Data;
 using DataAccess.Repository;
-using Models.CustomModels;
 using System;
 using System.Threading.Tasks;
 

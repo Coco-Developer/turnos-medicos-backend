@@ -1,6 +1,6 @@
 ﻿using System.Net.Mime;
 using System.Net.Mail;
-using ApiGestionTurnosMedicos.CustomModels;
+using Models.CustomModels;
 using DataAccess.Data;
 
 namespace BusinessLogic.AppLogic.Services

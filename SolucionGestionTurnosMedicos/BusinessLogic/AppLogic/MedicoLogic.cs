@@ -1,4 +1,4 @@
-﻿using ApiGestionTurnosMedicos.CustomModels;
+﻿using Models.CustomModels;
 using DataAccess.Context;
 using DataAccess.Data;
 using DataAccess.Repository;

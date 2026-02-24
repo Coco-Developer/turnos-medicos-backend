@@ -1,15 +1,9 @@
-﻿using ApiGestionTurnosMedicos.CustomModels;
-using ApiGestionTurnosMedicos.Services;
+﻿using Models.CustomModels;
 using BusinessLogic.AppLogic.Services;
 using DataAccess.Context;
 using DataAccess.Data;
 using DataAccess.Repository;
-using Models.CustomModels;
-using System;
-using System.Collections.Generic;
 using System.Data;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace BusinessLogic.AppLogic
 {

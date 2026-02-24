@@ -28,23 +28,28 @@ namespace ApiGestionTurnosMedicos.Controllers
 
         #region MÉTODOS PARA ADMIN
 
+        /// <summary>
+        /// Obtiene la lista completa de pacientes.
+        /// </summary>
         [Authorize(Roles = UserRoles.Admin)]
         [HttpGet]
         public async Task<ActionResult<List<Paciente>>> GetAllPatients()
         {
             try
             {
-                return Ok(await _pacienteLogic.PatientsListAsync());
+                var patients = await _pacienteLogic.PatientsListAsync();
+                return Ok(patients);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo todos los pacientes");
-                return BadRequest(new { message = ex.Message });
+                return StatusCode(500, new { message = "Error interno al obtener la lista de pacientes." });
             }
         }
 
-        // CORRECCIÓN 1: Agregamos :int para que este método SOLO acepte números.
-        // Si el front manda "get-dni", .NET ignorará este método y buscará el siguiente.
+        /// <summary>
+        /// Obtiene un paciente por su ID numérico.
+        /// </summary>
         [Authorize(Roles = UserRoles.Admin)]
         [HttpGet("{id:int}")]
         public async Task<ActionResult<Paciente>> GetPatientById(int id)
@@ -57,35 +62,45 @@ namespace ApiGestionTurnosMedicos.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error obteniendo paciente por ID");
-                return BadRequest(new { message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo paciente por ID: {Id}", id);
+                return StatusCode(500, new { message = ex.Message });
             }
         }
 
-        // CORRECCIÓN 2: Agregamos explícitamente el método para el DNI que pide tu Frontend.
+        /// <summary>
+        /// Obtiene un paciente por su DNI mediante QueryString (?dni=...).
+        /// </summary>
         [Authorize(Roles = UserRoles.Admin)]
         [HttpGet("get-dni")]
         public async Task<ActionResult<Paciente>> GetPatientByDni([FromQuery] string dni)
         {
             try
             {
-                if (string.IsNullOrEmpty(dni)) return BadRequest(new { message = "El DNI es requerido" });
+                if (string.IsNullOrWhiteSpace(dni))
+                    return BadRequest(new { message = "El DNI es requerido" });
 
                 var patient = await _pacienteLogic.GetPatientForDNIAsync(dni);
-                if (patient == null) return NotFound(new { message = "No existe paciente con ese DNI" });
+                if (patient == null)
+                    return NotFound(new { message = "No existe paciente con el DNI proporcionado" });
 
                 return Ok(patient);
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo paciente por DNI");
+                return StatusCode(500, new { message = "Error interno del servidor." });
             }
         }
 
+        /// <summary>
+        /// Crea un nuevo paciente y su usuario asociado.
+        /// </summary>
         [Authorize(Roles = UserRoles.Admin)]
         [HttpPost]
         public async Task<IActionResult> CreatePatient([FromBody] CreatePatientDto dto)
         {
+            if (dto == null) return BadRequest(new { message = "El cuerpo de la solicitud no puede estar vacío." });
+
             var oPatient = new Paciente
             {
                 Apellido = dto.Apellido,
@@ -96,6 +111,7 @@ namespace ApiGestionTurnosMedicos.Controllers
                 Dni = dto.Dni
             };
 
+            // Validaciones de negocio
             var validations = new ValidationsMethodPost(_context);
             var validationResult = await validations.ValidationsMethodPostPatient(oPatient);
 
@@ -107,19 +123,25 @@ namespace ApiGestionTurnosMedicos.Controllers
             try
             {
                 await _pacienteLogic.CreatePatientWithUserAsync(oPatient, dto.Password);
-                return Ok(new { message = "Paciente creado correctamente." });
+                // Retornamos 201 Created por buena práctica
+                return CreatedAtAction(nameof(GetPatientById), new { id = oPatient.Id }, new { message = "Paciente creado correctamente." });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creando paciente");
-                return BadRequest(new { message = ex.Message });
+                _logger.LogError(ex, "Error en la creación del paciente");
+                return StatusCode(500, new { message = "No se pudo crear el paciente: " + ex.Message });
             }
         }
 
+        /// <summary>
+        /// Actualiza los datos de un paciente existente.
+        /// </summary>
         [Authorize(Roles = UserRoles.Admin)]
-        [HttpPut("{id:int}")] // También agregamos :int aquí por seguridad
+        [HttpPut("{id:int}")]
         public async Task<IActionResult> UpdatePatientAsync(int id, [FromBody] UpdatePatientDto pacienteDto)
         {
+            if (pacienteDto == null) return BadRequest(new { message = "Datos de actualización inválidos." });
+
             try
             {
                 await _pacienteLogic.UpdatePatientAsync(id, pacienteDto);
@@ -127,13 +149,16 @@ namespace ApiGestionTurnosMedicos.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error actualizando paciente");
-                return BadRequest(new { message = ex.Message });
+                _logger.LogError(ex, "Error actualizando paciente ID: {Id}", id);
+                return StatusCode(500, new { message = "Error al actualizar: " + ex.Message });
             }
         }
 
+        /// <summary>
+        /// Elimina un paciente del sistema.
+        /// </summary>
         [Authorize(Roles = UserRoles.Admin)]
-        [HttpDelete("{id:int}")] // Y aquí
+        [HttpDelete("{id:int}")]
         public async Task<IActionResult> DeletePatient(int id)
         {
             try
@@ -143,23 +168,27 @@ namespace ApiGestionTurnosMedicos.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error eliminando paciente");
-                return BadRequest(new { message = ex.Message });
+                _logger.LogError(ex, "Error eliminando paciente ID: {Id}", id);
+                return StatusCode(500, new { message = "No se pudo eliminar el paciente." });
             }
         }
 
+        /// <summary>
+        /// Obtiene la cantidad total de pacientes registrados.
+        /// </summary>
         [Authorize(Roles = UserRoles.Admin)]
         [HttpGet("get-qty")]
         public async Task<ActionResult<int>> GetPatientsCount()
         {
             try
             {
-                return Ok(await _pacienteLogic.GetPatientsQtyAsync());
+                var count = await _pacienteLogic.GetPatientsQtyAsync();
+                return Ok(count);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo cantidad de pacientes");
-                return BadRequest(new { message = ex.Message });
+                return StatusCode(500, new { message = ex.Message });
             }
         }
 
@@ -167,24 +196,30 @@ namespace ApiGestionTurnosMedicos.Controllers
 
         #region MÉTODOS PARA PACIENTE (SELF)
 
+        /// <summary>
+        /// Obtiene el perfil del paciente que está logueado actualmente.
+        /// </summary>
         [Authorize(Roles = UserRoles.Paciente)]
         [HttpGet("my-profile")]
         public async Task<ActionResult<Paciente>> GetMyProfile()
         {
             try
             {
+                // Extraemos el DNI del Claim del Token JWT
                 var dni = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
                 if (string.IsNullOrEmpty(dni))
-                    return Unauthorized(new { message = "No se pudo identificar al usuario." });
+                    return Unauthorized(new { message = "Sesión inválida o expirada." });
 
                 var paciente = await _pacienteLogic.GetPatientForDNIAsync(dni);
+                if (paciente == null) return NotFound(new { message = "Perfil no encontrado." });
+
                 return Ok(paciente);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error obteniendo perfil del paciente");
-                return BadRequest(new { message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo perfil propio del paciente");
+                return StatusCode(500, new { message = "Error al recuperar el perfil." });
             }
         }
 

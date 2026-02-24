@@ -1,22 +1,19 @@
 ﻿using BusinessLogic.AppLogic;
 using DataAccess.Data;
 using Microsoft.AspNetCore.Mvc;
-using ApiGestionTurnosMedicos.CustomModels;
+using Models.CustomModels;
 using ApiGestionTurnosMedicos.Validations;
-using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
 using DataAccess.Context;
 
 namespace ApiGestionTurnosMedicos.Controllers
 {
     [Authorize]
-    [Route("/[controller]")]
+    [Route("[controller]")] // Eliminado el "/" inicial, [controller] es suficiente
     [ApiController]
     public class MedicoController : ControllerBase
     {
         private readonly ILogger<MedicoController> _logger;
-
-        #region ContextDataBase
         private readonly GestionTurnosContext _context;
 
         public MedicoController(GestionTurnosContext context, ILogger<MedicoController> logger)
@@ -24,89 +21,127 @@ namespace ApiGestionTurnosMedicos.Controllers
             _context = context;
             _logger = logger;
         }
-        #endregion
 
         [HttpGet]
         [Authorize(Roles = "Admin")]
-        public async Task<List<Medico>> Get()
+        public async Task<ActionResult<List<Medico>>> Get()
         {
-            MedicoLogic dLogic = new(_context);
-            return await dLogic.DoctorList();
+            try
+            {
+                MedicoLogic dLogic = new(_context);
+                return Ok(await dLogic.DoctorList());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error en Get Doctors");
+                return StatusCode(500, "Error interno al listar médicos");
+            }
         }
 
-        [HttpGet("{id}")]
+        // REGLA: Usamos :int para evitar que rutas de texto caigan aquí
+        [HttpGet("{id:int}")]
         [Authorize(Roles = "Admin,Medico")]
-        public async Task<Medico> Get(int id)
+        public async Task<ActionResult<Medico>> Get(int id)
         {
-            MedicoLogic dLogic = new(_context);
-            return await dLogic.GetDoctorForId(id);
+            try
+            {
+                MedicoLogic dLogic = new(_context);
+                var medico = await dLogic.GetDoctorForId(id);
+                if (medico == null) return NotFound(new { message = "Médico no encontrado" });
+                return Ok(medico);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
         }
 
         [HttpPost]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Post([FromBody] MedicoCustom oDoctor)
         {
+            if (oDoctor == null) return BadRequest(new { message = "Cuerpo de médico inválido" });
+
             MedicoLogic dLogic = new(_context);
             ValidationsMethodPost validations = new(_context);
 
-            // CORRECCIÓN: Se agrega 'await' porque el método ahora es asíncrono
-            ValidationsMethodPost validationResult = await validations.ValidationsMethodPostDoctor(oDoctor);
+            var validationResult = await validations.ValidationsMethodPostDoctor(oDoctor);
+            if (!validationResult.IsValid) return BadRequest(new { message = validationResult.ErrorMessage });
 
-            if (validationResult.IsValid == false) return BadRequest(new { validationResult.ErrorMessage });
-
-            Medico medico = new()
+            try
             {
-                Nombre = oDoctor.Nombre,
-                Apellido = oDoctor.Apellido,
-                EspecialidadId = oDoctor.EspecialidadId,
-                FechaAltaLaboral = oDoctor.FechaAltaLaboral,
-                Direccion = oDoctor.Direccion,
-                Dni = oDoctor.Dni,
-                Telefono = oDoctor.Telefono,
-                Matricula = oDoctor.Matricula,
-                Foto = string.IsNullOrEmpty(oDoctor.Foto) ? null : Convert.FromBase64String(oDoctor.Foto)
-            };
+                Medico medico = new()
+                {
+                    Nombre = oDoctor.Nombre,
+                    Apellido = oDoctor.Apellido,
+                    EspecialidadId = oDoctor.EspecialidadId,
+                    FechaAltaLaboral = oDoctor.FechaAltaLaboral,
+                    Direccion = oDoctor.Direccion,
+                    Dni = oDoctor.Dni,
+                    Telefono = oDoctor.Telefono,
+                    Matricula = oDoctor.Matricula,
+                    Foto = string.IsNullOrEmpty(oDoctor.Foto) ? null : Convert.FromBase64String(oDoctor.Foto)
+                };
 
-            var horarios = oDoctor.Horarios.Select(h => new HorarioMedico
+                var horarios = oDoctor.Horarios?.Select(h => new HorarioMedico
+                {
+                    DiaSemana = h.DiaSemana,
+                    HorarioAtencionInicio = h.HorarioAtencionInicio,
+                    HorarioAtencionFin = h.HorarioAtencionFin
+                }).ToList() ?? new List<HorarioMedico>();
+
+                await dLogic.CreateDoctor(medico, horarios);
+                return Ok(new { message = "Médico creado correctamente" });
+            }
+            catch (Exception ex)
             {
-                DiaSemana = h.DiaSemana,
-                HorarioAtencionInicio = h.HorarioAtencionInicio,
-                HorarioAtencionFin = h.HorarioAtencionFin
-            }).ToList();
-
-            await dLogic.CreateDoctor(medico, horarios);
-            return Ok();
+                _logger.LogError(ex, "Error al crear médico");
+                return StatusCode(500, new { message = "Error al guardar en base de datos", detail = ex.Message });
+            }
         }
 
-        [HttpPut("{id}")]
+        [HttpPut("{id:int}")]
         [Authorize(Roles = "Admin,Medico")]
         public async Task<IActionResult> Put(int id, [FromBody] MedicoCustom oDoctor)
         {
+            if (oDoctor == null) return BadRequest(new { message = "Datos de actualización inválidos" });
+
             ValidationsMethodPut validations = new ValidationsMethodPut(_context);
+            var validationResult = await validations.ValidationsMethodPutDoctor(oDoctor);
 
-            // CORRECCIÓN: Se agrega 'await' para obtener el resultado de la validación
-            ValidationsMethodPut validationResult = await validations.ValidationsMethodPutDoctor(oDoctor);
+            if (!validationResult.IsValid) return BadRequest(new { message = validationResult.ErrorMessage });
 
-            if (validationResult.IsValid == false) return BadRequest(new { validationResult.ErrorMessage });
+            try
+            {
+                MedicoLogic dLogic = new(_context);
+                await dLogic.UpdateDoctor(id, oDoctor);
 
-            MedicoLogic dLogic = new(_context);
-            await dLogic.UpdateDoctor(id, oDoctor);
-
-            _logger.LogInformation("El usuario {Usuario} modificó el Médico {id} a las {FechaHora}",
-                User?.Identity?.Name ?? "Anónimo", id, DateTime.UtcNow);
-
-            return Ok();
+                _logger.LogInformation("Médico {id} modificado por {Usuario}", id, User?.Identity?.Name ?? "Anónimo");
+                return Ok(new { message = "Médico actualizado" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
         }
 
-        [HttpDelete("{id}")]
+        [HttpDelete("{id:int}")]
         [Authorize(Roles = "Admin")]
-        public async Task Delete(int id)
+        public async Task<IActionResult> Delete(int id)
         {
-            MedicoLogic dLogic = new(_context);
-            await dLogic.DeleteDoctor(id);
+            try
+            {
+                MedicoLogic dLogic = new(_context);
+                await dLogic.DeleteDoctor(id);
+                return Ok(new { message = "Médico eliminado" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Error al eliminar");
+            }
         }
 
-        [HttpGet("list-for-specialty/{id}")]
+        [HttpGet("list-for-specialty/{id:int}")]
         [Authorize]
         public async Task<IActionResult> GetListDoctorForSpecialty(int id)
         {
@@ -114,26 +149,21 @@ namespace ApiGestionTurnosMedicos.Controllers
             {
                 MedicoLogic dLogic = new(_context);
                 var doctors = await dLogic.FindDoctorForSpecialty(id);
-
-                if (doctors == null || !doctors.Any())
-                {
-                    return NotFound($"No se encuentran médicos con la ID {id}");
-                }
-
+                if (doctors == null || !doctors.Any()) return NotFound($"No se encuentran médicos con la especialidad {id}");
                 return Ok(doctors);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error recuperando médicos por especialidad: {ex.Message}");
+                return StatusCode(500, $"Error: {ex.Message}");
             }
         }
 
         [HttpGet("get-all-doctors")]
         [Authorize(Roles = "Admin,Medico")]
-        public async Task<List<MedicoCustom>> ReturnAllDoctorsWithOurSpecialty()
+        public async Task<ActionResult<List<MedicoCustom>>> ReturnAllDoctorsWithOurSpecialty()
         {
             MedicoLogic dLogic = new(_context);
-            return await dLogic.ReturnAllDoctorsWithOurSpecialty();
+            return Ok(await dLogic.ReturnAllDoctorsWithOurSpecialty());
         }
 
         [HttpGet("get-qty")]
@@ -143,46 +173,38 @@ namespace ApiGestionTurnosMedicos.Controllers
             try
             {
                 MedicoLogic pLogic = new(_context);
-                return await pLogic.GetDoctorsQty();
+                return Ok(await pLogic.GetDoctorsQty());
             }
             catch (Exception ex)
             {
-                return BadRequest(new { ex.Message });
+                return StatusCode(500, new { ex.Message });
             }
         }
 
-        [HttpGet("get-schedule/{id}")]
+        [HttpGet("get-schedule/{id:int}")]
         public async Task<IActionResult> GetScheduleForDoctor(int id)
         {
             try
             {
                 MedicoLogic dLogic = new(_context);
                 var schedule = await dLogic.GetScheduleForDoctor(id);
-                if (schedule == null || !schedule.Any())
-                {
-                    return NotFound($"No se encontraron horarios para el médico con ID {id}");
-                }
+                if (schedule == null || !schedule.Any()) return NotFound("No se encontraron horarios");
                 return Ok(schedule);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error recuperando horarios del médico: {ex.Message}");
+                return StatusCode(500, ex.Message);
             }
         }
 
-        [HttpGet("get-full-schedule/{id}")]
+        [HttpGet("get-full-schedule/{id:int}")]
         public async Task<IActionResult> GetFullScheduleForDoctor(int id)
         {
             try
             {
                 MedicoLogic dLogic = new(_context);
                 var fechasOcupadas = await dLogic.GetFullScheduleForDoctor(id);
-
-                var fechasOcupadasStr = fechasOcupadas?
-                    .OrderBy(f => f)
-                    .Select(f => f.ToString("yyyy-MM-dd"))
-                    .ToList() ?? new List<string>();
-
+                var fechasOcupadasStr = fechasOcupadas?.OrderBy(f => f).Select(f => f.ToString("yyyy-MM-dd")).ToList() ?? new List<string>();
                 return Ok(fechasOcupadasStr);
             }
             catch (Exception ex)
