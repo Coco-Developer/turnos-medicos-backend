@@ -63,12 +63,13 @@ namespace ApiGestionTurnosMedicos.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo paciente por ID: {Id}", id);
-                return StatusCode(500, new { message = ex.Message });
+                return StatusCode(500, new { message = "Error: " + ex.Message });
             }
         }
 
         /// <summary>
-        /// Obtiene un paciente por su DNI mediante QueryString (?dni=...).
+        /// Obtiene un paciente por su DNI. 
+        /// Modificado para no lanzar 500 si no existe.
         /// </summary>
         [Authorize(Roles = UserRoles.Admin)]
         [HttpGet("get-dni")]
@@ -80,15 +81,18 @@ namespace ApiGestionTurnosMedicos.Controllers
                     return BadRequest(new { message = "El DNI es requerido" });
 
                 var patient = await _pacienteLogic.GetPatientForDNIAsync(dni);
+
+                // IMPORTANTE: Si no existe, devolvemos 204 (No Content) o 404.
+                // Esto evita que el Frontend reciba un Error 500 genérico.
                 if (patient == null)
-                    return NotFound(new { message = "No existe paciente con el DNI proporcionado" });
+                    return NoContent();
 
                 return Ok(patient);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo paciente por DNI");
-                return StatusCode(500, new { message = "Error interno del servidor." });
+                return StatusCode(500, new { message = "Error al verificar DNI." });
             }
         }
 
@@ -99,7 +103,7 @@ namespace ApiGestionTurnosMedicos.Controllers
         [HttpPost]
         public async Task<IActionResult> CreatePatient([FromBody] CreatePatientDto dto)
         {
-            if (dto == null) return BadRequest(new { message = "El cuerpo de la solicitud no puede estar vacío." });
+            if (dto == null) return BadRequest(new { message = "Datos nulos." });
 
             var oPatient = new Paciente
             {
@@ -111,7 +115,7 @@ namespace ApiGestionTurnosMedicos.Controllers
                 Dni = dto.Dni
             };
 
-            // Validaciones de negocio
+            // Validaciones de negocio manuales (DNI duplicado, Email, etc.)
             var validations = new ValidationsMethodPost(_context);
             var validationResult = await validations.ValidationsMethodPostPatient(oPatient);
 
@@ -123,13 +127,13 @@ namespace ApiGestionTurnosMedicos.Controllers
             try
             {
                 await _pacienteLogic.CreatePatientWithUserAsync(oPatient, dto.Password);
-                // Retornamos 201 Created por buena práctica
                 return CreatedAtAction(nameof(GetPatientById), new { id = oPatient.Id }, new { message = "Paciente creado correctamente." });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error en la creación del paciente");
-                return StatusCode(500, new { message = "No se pudo crear el paciente: " + ex.Message });
+                // Enviamos un 400 Bad Request con el mensaje real de la excepción
+                return BadRequest(new { message = ex.Message });
             }
         }
 
@@ -140,7 +144,7 @@ namespace ApiGestionTurnosMedicos.Controllers
         [HttpPut("{id:int}")]
         public async Task<IActionResult> UpdatePatientAsync(int id, [FromBody] UpdatePatientDto pacienteDto)
         {
-            if (pacienteDto == null) return BadRequest(new { message = "Datos de actualización inválidos." });
+            if (pacienteDto == null) return BadRequest(new { message = "Datos inválidos." });
 
             try
             {
@@ -150,7 +154,7 @@ namespace ApiGestionTurnosMedicos.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error actualizando paciente ID: {Id}", id);
-                return StatusCode(500, new { message = "Error al actualizar: " + ex.Message });
+                return BadRequest(new { message = ex.Message });
             }
         }
 
@@ -169,12 +173,12 @@ namespace ApiGestionTurnosMedicos.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error eliminando paciente ID: {Id}", id);
-                return StatusCode(500, new { message = "No se pudo eliminar el paciente." });
+                return BadRequest(new { message = "No se pudo eliminar el paciente." });
             }
         }
 
         /// <summary>
-        /// Obtiene la cantidad total de pacientes registrados.
+        /// Obtiene la cantidad total de pacientes.
         /// </summary>
         [Authorize(Roles = UserRoles.Admin)]
         [HttpGet("get-qty")]
@@ -187,7 +191,7 @@ namespace ApiGestionTurnosMedicos.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error obteniendo cantidad de pacientes");
+                _logger.LogError(ex, "Error obteniendo cantidad");
                 return StatusCode(500, new { message = ex.Message });
             }
         }
@@ -197,7 +201,7 @@ namespace ApiGestionTurnosMedicos.Controllers
         #region MÉTODOS PARA PACIENTE (SELF)
 
         /// <summary>
-        /// Obtiene el perfil del paciente que está logueado actualmente.
+        /// Obtiene el perfil del paciente logueado.
         /// </summary>
         [Authorize(Roles = UserRoles.Paciente)]
         [HttpGet("my-profile")]
@@ -205,11 +209,8 @@ namespace ApiGestionTurnosMedicos.Controllers
         {
             try
             {
-                // Extraemos el DNI del Claim del Token JWT
                 var dni = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
-                if (string.IsNullOrEmpty(dni))
-                    return Unauthorized(new { message = "Sesión inválida o expirada." });
+                if (string.IsNullOrEmpty(dni)) return Unauthorized();
 
                 var paciente = await _pacienteLogic.GetPatientForDNIAsync(dni);
                 if (paciente == null) return NotFound(new { message = "Perfil no encontrado." });
@@ -218,7 +219,7 @@ namespace ApiGestionTurnosMedicos.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error obteniendo perfil propio del paciente");
+                _logger.LogError(ex, "Error perfil");
                 return StatusCode(500, new { message = "Error al recuperar el perfil." });
             }
         }
