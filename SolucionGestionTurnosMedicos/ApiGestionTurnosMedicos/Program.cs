@@ -124,9 +124,10 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontCors", policy =>
        policy.WithOrigins(
-                "http://localhost:5173", // Puerto por defecto de Vite (el que estás usando)
-                "http://localhost:3000"  // Tu puerto anterior por las dudas
-                                         
+                "http://localhost:5173", 
+                "http://localhost:3000", 
+                "https://agreeable-wave-058616a0f.4.azurestaticapps.net"
+
               )
               .AllowAnyHeader()
               .AllowAnyMethod());
