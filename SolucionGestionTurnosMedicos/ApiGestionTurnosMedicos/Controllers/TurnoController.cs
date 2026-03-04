@@ -36,7 +36,7 @@ namespace ApiGestionTurnosMedicos.Controllers
             return Ok(await _turnoLogic.ShiftList());
         }
 
-        // ---------------- GET BY ID ----------------
+        // ---------------- GET BY ID AND DATE ----------------
 
         [HttpGet("{id}")]
         public async Task<ActionResult<VwTurno>> Get(int id)
@@ -47,6 +47,28 @@ namespace ApiGestionTurnosMedicos.Controllers
                 return NotFound(new { message = "Turno no encontrado." });
 
             return Ok(turno);
+        }
+
+
+        [HttpGet("get-by-date/{fecha}")]
+        public async Task<ActionResult<List<VwTurno>>> GetByDate(string fecha)
+        {
+            DateTime parsed = DateTime.Parse(fecha);
+            return Ok(await _turnoLogic.ListOfShiftsOfDate(parsed));
+        }
+
+        [HttpGet("get-dates-with-shifts/{mes}")]
+        public async Task<ActionResult<List<DateTime>>> GetDatesWithShifts(int mes)
+        {
+            return Ok(await _turnoLogic.ListOfDatesWithShiftsOfMonth(mes));
+        }
+
+        [HttpGet("get-calendar-data")]
+        public async Task<ActionResult<List<CalendarEvent>>> GetCalendarData(
+            [FromQuery] string start,
+            [FromQuery] string end)
+        {
+            return Ok(await _turnoLogic.ListOfCalendarData(start, end));
         }
 
         // ---------------- CREATE ----------------
