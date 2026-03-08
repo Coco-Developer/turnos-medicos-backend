@@ -81,6 +81,70 @@ namespace DataAccess.Repository
             _context.Medicos.Update(medico);
             await _context.SaveChangesAsync();
         }
+        public async Task UpdateDoctorWithSchedules(Medico medico, List<HorarioMedico> horarios)
+        {
+            using var tx = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                // 1) Cargar médico "limpio" (sin Include Horarios)
+                var doctorDb = await _context.Medicos
+                    .FirstOrDefaultAsync(m => m.Id == medico.Id);
+
+                if (doctorDb == null)
+                    throw new ArgumentException($"No existe médico con Id {medico.Id}");
+
+                // 2) Actualizar solo campos escalares
+                doctorDb.Nombre = medico.Nombre;
+                doctorDb.Apellido = medico.Apellido;
+                doctorDb.Dni = medico.Dni;
+                doctorDb.Telefono = medico.Telefono;
+                doctorDb.Direccion = medico.Direccion;
+                doctorDb.EspecialidadId = medico.EspecialidadId;
+                doctorDb.FechaAltaLaboral = medico.FechaAltaLaboral;
+                doctorDb.Matricula = medico.Matricula;
+                doctorDb.Foto = medico.Foto;
+
+                await _context.SaveChangesAsync();
+
+                // 3) Borrar agenda anterior
+                var existentes = await _context.HorariosMedicos
+                    .Where(h => h.MedicoId == medico.Id)
+                    .ToListAsync();
+
+                _context.HorariosMedicos.RemoveRange(existentes);
+                await _context.SaveChangesAsync();
+
+                // 4) Insertar agenda nueva (1 registro por día válido)
+                var nuevos = (horarios ?? new List<HorarioMedico>())
+                    .Where(h => h.HorarioAtencionInicio != null && h.HorarioAtencionFin != null)
+                    .GroupBy(h => h.DiaSemana)
+                    .Select(g => g.First())
+                    .Select(h => new HorarioMedico
+                    {
+                        MedicoId = medico.Id,
+                        DiaSemana = h.DiaSemana,
+                        HorarioAtencionInicio = h.HorarioAtencionInicio,
+                        HorarioAtencionFin = h.HorarioAtencionFin
+                    })
+                    .ToList();
+
+                if (nuevos.Count > 0)
+                {
+                    await _context.HorariosMedicos.AddRangeAsync(nuevos);
+                    await _context.SaveChangesAsync();
+                }
+
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        }
+
+
 
         public async Task DeleteDoctor(Medico medico)
         {

@@ -1,6 +1,5 @@
 using ApiGestionTurnosMedicos.Config;
 using ApiGestionTurnosMedicos.Middlewares;
-using ApiGestionTurnosMedicos.Services;
 using ApiGestionTurnosMedicos.Validations;
 using BusinessLogic.AppLogic;
 using BusinessLogic.AppLogic.Services;
@@ -19,13 +18,13 @@ using System.Text;
 var builder = WebApplication.CreateBuilder(args);
 
 // ---------------------------------------------------------
-// 1. Configuración de Logging
+// 1. Logging
 // ---------------------------------------------------------
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 
 // ---------------------------------------------------------
-// 2. Configuración de Base de Datos (Optimizado para Azure)
+// 2. DB
 // ---------------------------------------------------------
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
@@ -34,7 +33,6 @@ builder.Services.AddDbContext<GestionTurnosContext>(options =>
 {
     options.UseSqlServer(connectionString, sqlOptions =>
     {
-        // Resiliencia: Reintentos automáticos para fallos transitorios en la nube
         sqlOptions.EnableRetryOnFailure(
             maxRetryCount: 5,
             maxRetryDelay: TimeSpan.FromSeconds(30),
@@ -43,20 +41,23 @@ builder.Services.AddDbContext<GestionTurnosContext>(options =>
 
     if (builder.Environment.IsDevelopment())
     {
-        // Permite ver datos de parámetros en los logs de error (solo desarrollo)
         options.EnableSensitiveDataLogging();
     }
 });
 
 // ---------------------------------------------------------
-// 3. Seguridad, JWT y Configuración (POCOs)
+// 3. JWT + Settings
 // ---------------------------------------------------------
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var keyString = jwtSettings["Key"] ?? throw new ArgumentNullException("JWT Key missing in configuration.");
 var key = Encoding.UTF8.GetBytes(keyString);
 
 builder.Services.Configure<JwtSettings>(jwtSettings);
+
+// IMPORTANTE: usa el nombre real de tu sección en appsettings.
+// Si tu sección es GmailSettings, dejalo así:
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("GmailSettings"));
+// Si prefieres "EmailSettings", cambia esta línea y tu appsettings.
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -72,7 +73,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = jwtSettings["Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(key),
 
-            // 🔥 CLAVE PARA QUE [Authorize(Roles="Admin")] FUNCIONE
             RoleClaimType = ClaimTypes.Role,
             NameClaimType = ClaimTypes.NameIdentifier,
 
@@ -81,13 +81,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 // ---------------------------------------------------------
-// 4. Inyección de Dependencias (DI) - Repositorios y Lógica
+// 4. DI
 // ---------------------------------------------------------
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(ConfigureSwagger);
 
-// --- REPOSITORIOS (Capa DataAccess) ---
+// Repos
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<PacienteRepository>();
 builder.Services.AddScoped<MedicoRepository>();
@@ -95,39 +95,39 @@ builder.Services.AddScoped<TurnoRepository>();
 builder.Services.AddScoped<EspecialidadRepository>();
 builder.Services.AddScoped<EstadoRepository>();
 
-// --- LÓGICA DE NEGOCIO (Capa BusinessLogic) ---
+// Logic
 builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<AdminSetupService>(); // Resuelve error 500
+builder.Services.AddScoped<AdminSetupService>();
 builder.Services.AddScoped<PacienteLogic>();
 builder.Services.AddScoped<MedicoLogic>();
 builder.Services.AddScoped<TurnoLogic>();
 builder.Services.AddScoped<EspecialidadLogic>();
 builder.Services.AddScoped<EstadoLogic>();
 
-// --- VALIDACIONES ---
+// Validations
 builder.Services.AddScoped<ValidationsMethodPost>();
 builder.Services.AddScoped<ValidationsMethodPut>();
 
-
-// --- SERVICIOS TRANSVERSALES ---
+// Email (alineado a DI)
+builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("GmailSettings"));
+builder.Services.AddScoped<IMessage, Message>();
+builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<EmailService>();
-builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
-builder.Services.AddTransient<IMessage, Message>();
+
 builder.Services.AddScoped<IPasswordHasher<Usuario>, PasswordHasher<Usuario>>();
 
-// --- CONFIGURACIÓN API KEYS ---
+// API Keys
 var allowedApiKeys = builder.Configuration.GetSection("AllowedApiKeys").Get<string[]>() ?? Array.Empty<string>();
 builder.Services.AddSingleton<IList<string>>(allowedApiKeys);
 
-// --- CORS ---
+// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontCors", policy =>
        policy.WithOrigins(
-                "http://localhost:5173", 
-                "http://localhost:3000", 
+                "http://localhost:5173",
+                "http://localhost:3000",
                 "https://agreeable-wave-058616a0f.4.azurestaticapps.net"
-
               )
               .AllowAnyHeader()
               .AllowAnyMethod());
@@ -136,20 +136,18 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 // ---------------------------------------------------------
-// 5. Pipeline de Middlewares (Orden Crítico)
+// 5. Pipeline
 // ---------------------------------------------------------
-
-// Manejo global de excepciones (siempre primero)
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI(c => {
+    app.UseSwaggerUI(c =>
+    {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "ChronoMed API v1.6");
     });
 
-    // TEST DE CONEXIÓN REAL AL INICIAR
     using (var scope = app.Services.CreateScope())
     {
         var db = scope.ServiceProvider.GetRequiredService<GestionTurnosContext>();
@@ -176,9 +174,6 @@ app.MapControllers();
 
 app.Run();
 
-// ---------------------------------------------------------
-// Helper: Configuración de Swagger (Seguridad)
-// ---------------------------------------------------------
 void ConfigureSwagger(SwaggerGenOptions c)
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "ChronoMed API", Version = "v1.6" });

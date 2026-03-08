@@ -217,5 +217,13 @@ namespace DataAccess.Repository
                 Id = t.Fecha.ToString("yyyy-MM-dd")
             }).ToList();
         }
+
+        public async Task<List<VwTurno>> GetShiftsByDoctorVw(int idMedico)
+        {
+            return await _context.VwTurnos
+                .Where(t => t.MedicoId == idMedico)
+                .ToListAsync();
+        }
+
     }
 }

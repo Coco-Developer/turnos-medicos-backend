@@ -143,8 +143,20 @@ namespace BusinessLogic.AppLogic
                 }
             }
 
-            await _repDoctor.UpdateDoctor(doctor);
+            var horarios = dto.Horarios?
+                .Where(h => h.HorarioAtencionInicio != null && h.HorarioAtencionFin != null)
+                .Select(h => new HorarioMedico
+                {
+                    MedicoId = id,
+                    DiaSemana = h.DiaSemana,
+                    HorarioAtencionInicio = h.HorarioAtencionInicio,
+                    HorarioAtencionFin = h.HorarioAtencionFin
+                })
+                .ToList() ?? new List<HorarioMedico>();
+
+            await _repDoctor.UpdateDoctorWithSchedules(doctor, horarios);
         }
+
 
         public async Task DeleteDoctor(int id)
         {

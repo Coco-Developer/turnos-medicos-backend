@@ -1,45 +1,40 @@
-﻿using System.Net.Mime;
-using System.Net.Mail;
+﻿using DataAccess.Data;
+using Microsoft.Extensions.Logging;
 using Models.CustomModels;
-using DataAccess.Data;
+using System.Net.Mail;
+using System.Net.Mime;
 
 namespace BusinessLogic.AppLogic.Services
 {
-    /// <summary>
-    /// Interfaz para abstracción del envío de emails (facilita mockear en tests).
-    /// </summary>
     public interface IEmailSender
     {
-        /// <summary>
-        /// Envía un email en HTML. `inlineResources` puede ser null.
-        /// </summary>
-        void SendEmail(string subject, string htmlBody, string to, IEnumerable<LinkedResource> inlineResources = null);
+        void SendEmail(string subject, string htmlBody, string to, IEnumerable<LinkedResource>? inlineResources = null);
     }
 
-    /// <summary>
-    /// Implementación que delega en la clase estática `Message` existente.
-    /// Mantiene la compatibilidad con la lógica del proyecto actual.
-    /// </summary>
     public class SmtpEmailSender : IEmailSender
     {
-        public void SendEmail(string subject, string htmlBody, string to, IEnumerable<LinkedResource> inlineResources = null)
+        private readonly IMessage _message;
+
+        public SmtpEmailSender(IMessage message)
         {
-            // Si `Message.SendEmail` acepta array de LinkedResource, convertir.
-            Message.SendEmail(subject, htmlBody, to, inlineResources?.ToArray());
+            _message = message;
+        }
+
+        public void SendEmail(string subject, string htmlBody, string to, IEnumerable<LinkedResource>? inlineResources = null)
+        {
+            _message.SendEmail(subject, htmlBody, to, inlineResources);
         }
     }
 
-    /// <summary>
-    /// Servicio de emails refactorizado para inyección de `IEmailSender`.
-    /// Pasar un `IEmailSender` (o un Mock en tests) al construir la instancia.
-    /// </summary>
     public class EmailService
     {
         private readonly IEmailSender _emailSender;
+        private readonly ILogger<EmailService> _logger;
 
-        public EmailService(IEmailSender emailSender)
+        public EmailService(IEmailSender emailSender, ILogger<EmailService> logger)
         {
             _emailSender = emailSender ?? throw new ArgumentNullException(nameof(emailSender));
+            _logger = logger;
         }
 
         public void SendShiftConfirmationEmail(Turno turno, Paciente paciente, MedicoConEspecialidad medico)
@@ -48,7 +43,13 @@ namespace BusinessLogic.AppLogic.Services
             if (paciente == null) throw new ArgumentNullException(nameof(paciente));
             if (medico == null) throw new ArgumentNullException(nameof(medico));
 
-            // Ruta del logo (se copia al output por configuración de VS)
+            // Si no hay email, no cortar el flujo de negocio
+            if (string.IsNullOrWhiteSpace(paciente.Email))
+            {
+                _logger.LogWarning("No se envió email de turno: paciente {PacienteId} sin email.", paciente.Id);
+                return;
+            }
+
             string logoPath = Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
                 "Assets", "Images", "logo192.png"
@@ -62,101 +63,60 @@ namespace BusinessLogic.AppLogic.Services
                 <meta charset='UTF-8'>
                 <meta name='viewport' content='width=device-width, initial-scale=1.0'>
                 <title>Confirmación de Turno</title>
-                <style>
-                    @import url('https://fonts.googleapis.com/css2?family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap');
-                    @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&display=swap');
-
-                    body {{
-                        font-family: ""Ubuntu"", -apple-system, BlinkMacSystemFont, ""Bitstream Vera Sans"", ""DejaVu Sans"", Tahoma, 'Segoe UI', 'Roboto', 'Droid Sans', 'Helvetica Neue', sans-serif !important;
-                        background-color: #fff;
-                        padding: 20px;
-                    }}
-                    .app-logo {{
-                        color: #fff;
-                        background-color: #004c3c;
-                        border-radius: 10px;
-                        font-family: ""Rajdhani"", sans-serif !important;
-                        
-                        font-weight: 300 !important;
-                        text-align:center;
-                    }}
-                    .app-logo span {{
-                        font-size: 2rem;
-                    }}
-                    .app-logo b {{
-                        font-weight: 700  !important;
-                    }}
-                    .container {{
-                        margin-left: auto;
-                        margin-right: auto;
-                        background: #e8e8e8;
-                        padding: 20px;
-                        border-radius: 10px;
-                        max-width: 600px;
-                        margin: auto;
-                        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-                    }}
-                    .title {{
-                        text-align: center;
-                        font-size: 24px;
-                        font-weight: bold;
-                        color: #0C3883;
-                    }}
-                    .highlight {{
-                        font-weight: bold;
-                    }}
-                </style>
             </head>
-
-            <body>
-                <div class='container'>
-                    <div class='app-logo'>
-                        <img src='cid:cm-logo' width='128' height='128'><br><span>Chrono<b>Med</b></span>
+            <body style='font-family:Arial, sans-serif; background:#fff; padding:20px;'>
+                <div style='max-width:600px;margin:auto;background:#e8e8e8;padding:20px;border-radius:10px;'>
+                    <div style='text-align:center;background:#004c3c;color:#fff;border-radius:10px;padding:12px;'>
+                        <img src='cid:cm-logo' width='96' height='96' /><br />
+                        <span style='font-size:1.5rem;'>Chrono<b>Med</b></span>
                     </div>
-                    <div class='title'>Asignación de turno para consulta de: {paciente.NombreCompletoPaciente().ToUpper()}</div>
-                    </div>
-                    <p>Estimado/a usuario <span class='highlight'>{paciente.NombreCompletoPaciente().ToUpper()}</span>:</p>
-                    <p>Te recordamos que has reservado un turno para una consulta con los siguientes datos:</p>
-                    <p class='section-title'>Datos del paciente:</p>
-                    <p>Nombre completo: <span class='highlight'>{paciente.NombreCompletoPaciente()}</span></p>
-                    <p>Dni: <span class='highlight'>{paciente.Dni}</span></p>
-                    <p>Edad: <span class='highlight'>{paciente.EdadDelPaciente(paciente.FechaNacimiento)} años</span></p>
-                    <p class='section-title'>Constancia del Turno:</p>
-                    <p>Especialidad: <span class='highlight'>{medico.Especialidad}</span></p>
-                    <p>Médico: <span class='highlight'>{medico.NombreCompletoMedico(medico.Nombre,
-                            medico.Apellido).ToUpper()}</span></p>
-                    <p>Turno para el día: <span class='highlight'>{turno.Fecha:dd/MM/yyyy} - Hora: {horaTurno}</span></p>
-                    <p style='margin-top:2rem;font-size:80%'>Si <span class='highlight'>no vas a asistir</span> a tu consulta presencial o por Telemedicina, es <span
-                            class='highlight'>importante</span> que la canceles o reprogrames para que otro paciente pueda tomarla.<br>
-                       Podés cancelarlo desde la aplicación móvil.
-                    </p>
+                    <h2 style='color:#0C3883;'>Asignación de turno para: {paciente.NombreCompletoPaciente().ToUpper()}</h2>
+                    <p>Estimado/a <b>{paciente.NombreCompletoPaciente().ToUpper()}</b>:</p>
+                    <p>Recordamos tu turno con estos datos:</p>
+                    <p><b>Paciente:</b> {paciente.NombreCompletoPaciente()}</p>
+                    <p><b>DNI:</b> {paciente.Dni}</p>
+                    <p><b>Especialidad:</b> {medico.Especialidad}</p>
+                    <p><b>Médico:</b> {medico.NombreCompletoMedico(medico.Nombre, medico.Apellido).ToUpper()}</p>
+                    <p><b>Fecha y hora:</b> {turno.Fecha:dd/MM/yyyy} - {horaTurno}</p>
                 </div>
             </body>
-
             </html>";
 
-            // Añadir el logo incrustado
-            var logo = new LinkedResource(logoPath)
+            try
             {
-                ContentId = "cm-logo", // ¡IMPORTANTE! Debe coincidir con cid:cm-logo en HTML
-                TransferEncoding = System.Net.Mime.TransferEncoding.Base64,
-                ContentType = new ContentType("image/png")
-            };
+                LinkedResource? logo = null;
 
-            _emailSender.SendEmail("Constancia de turno", emailBody, paciente.Email, new[] { logo });
+                if (File.Exists(logoPath))
+                {
+                    logo = new LinkedResource(logoPath)
+                    {
+                        ContentId = "cm-logo",
+                        TransferEncoding = System.Net.Mime.TransferEncoding.Base64,
+                        ContentType = new ContentType("image/png")
+                    };
+                }
+
+                _emailSender.SendEmail(
+                    "Constancia de turno",
+                    emailBody,
+                    paciente.Email,
+                    logo != null ? new[] { logo } : null
+                );
+            }
+            catch (Exception ex)
+            {
+                // Loguea pero no rompe
+                _logger.LogWarning(ex, "Falló el envío de email de turno para paciente {PacienteId}", paciente.Id);
+            }
         }
 
-        /// <summary>
-        /// Envía un email con la nueva contraseña al destinatario especificado.
-        /// </summary>
-        /// <param name="email">El email del usuario. DEBE estar en la tabla Usuario.</param>
-        /// <param name="newPassword">La nueva contraseña</param>
         public void SendPasswordResetEmail(string email, string newPassword)
         {
-            if (string.IsNullOrWhiteSpace(email)) throw new ArgumentNullException(nameof(email));
-            if (newPassword == null) throw new ArgumentNullException(nameof(newPassword));
+            if (string.IsNullOrWhiteSpace(email))
+                throw new ArgumentNullException(nameof(email));
+            if (newPassword == null)
+                throw new ArgumentNullException(nameof(newPassword));
 
-            // Ruta del logo (se copia al output por configuración de VS)
             string logoPath = Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
                 "Assets", "Images", "logo192.png"
@@ -164,76 +124,46 @@ namespace BusinessLogic.AppLogic.Services
 
             string htmlBody = $@"
             <html>
-            <head>
-                <meta charset='UTF-8'>
-                <style>
-                    @import url('https://fonts.googleapis.com/css2?family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap');
-                    @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&display=swap');
-
-                    body {{
-                        font-family: ""Ubuntu"", -apple-system, BlinkMacSystemFont, ""Bitstream Vera Sans"", ""DejaVu Sans"", Tahoma, 'Segoe UI', 'Roboto', 'Droid Sans', 'Helvetica Neue', sans-serif !important;
-                        background-color: #fff;
-                        padding: 20px;
-                    }}
-                    .app-logo {{
-                        color: #fff;
-                        background-color: #004c3c;
-                        border-radius: 10px;
-                        font-family: ""Rajdhani"", sans-serif !important;
-                        
-                        font-weight: 300 !important;
-                        text-align:center;
-                    }}
-                    .app-logo span {{
-                        font-size: 2rem;
-                    }}
-                    .app-logo b {{
-                        font-weight: 700  !important;
-                    }}
-                    .container {{
-                        margin-left: auto;
-                        margin-right: auto;
-                        background: #e8e8e8;
-                        padding: 20px;
-                        border-radius: 10px;
-                        max-width: 600px;
-                        margin: auto;
-                        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-                    }}
-                    .title {{
-                        text-align: center;
-                        font-size: 24px;
-                        font-weight: bold;
-                        color: #0C3883;
-                    }}
-                    .highlight {{
-                        font-weight: bold;
-                    }}
-                </style>
-            </head>
-            <body>
-                <div class='container'>
-                    <div class='app-logo'>
-                        <img src='cid:cm-logo' width='128' height='128'><br><span>Chrono<b>Med</b></span>
+            <head><meta charset='UTF-8'></head>
+            <body style='font-family:Arial, sans-serif; background:#fff; padding:20px;'>
+                <div style='max-width:600px;margin:auto;background:#e8e8e8;padding:20px;border-radius:10px;'>
+                    <div style='text-align:center;background:#004c3c;color:#fff;border-radius:10px;padding:12px;'>
+                        <img src='cid:cm-logo' width='96' height='96' /><br />
+                        <span style='font-size:1.5rem;'>Chrono<b>Med</b></span>
                     </div>
-                    <h1 class='title'>Nueva Contraseña</h1>
-                    <p>Estimado usuario:</p>
-                    <p>Tu contraseña ha sido restablecida exitosamente.</p>
-                    <p>Tu nueva contraseña es: <strong class='highlight'>{newPassword}</strong></p>
-                    <p>Por favor, inicia sesión con esta nueva contraseña.</p>
+                    <h2 style='color:#0C3883;'>Nueva Contraseña</h2>
+                    <p>Tu contraseña fue restablecida.</p>
+                    <p><b>Nueva contraseña:</b> {newPassword}</p>
                 </div>
             </body>
             </html>";
 
-            // Añadir el logo incrustado
-            var logo = new LinkedResource(logoPath)
+            try
             {
-                ContentId = "cm-logo", // ¡IMPORTANTE! Debe coincidir con cid:cm-logo en HTML
-                TransferEncoding = System.Net.Mime.TransferEncoding.Base64,
-                ContentType = new ContentType("image/png")
-            };
+                LinkedResource? logo = null;
 
-            _emailSender.SendEmail("Nueva Contraseña", htmlBody, email, new[] { logo });
+                if (File.Exists(logoPath))
+                {
+                    logo = new LinkedResource(logoPath)
+                    {
+                        ContentId = "cm-logo",
+                        TransferEncoding = System.Net.Mime.TransferEncoding.Base64,
+                        ContentType = new ContentType("image/png")
+                    };
+                }
+
+                _emailSender.SendEmail(
+                    "Nueva Contraseña",
+                    htmlBody,
+                    email,
+                    logo != null ? new[] { logo } : null
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Falló el envío de email de reset para {Email}", email);
+                throw;
+            }
         }
     }
 }

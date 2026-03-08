@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Models.CustomModels;
 using System.Diagnostics;
-using System.Net.NetworkInformation;
 
 namespace ApiGestionTurnosMedicos.Controllers
 {
@@ -28,15 +27,11 @@ namespace ApiGestionTurnosMedicos.Controllers
             _logger = logger;
         }
 
-        // ---------------- GET ALL ----------------
-
         [HttpGet]
         public async Task<ActionResult<List<VwTurno>>> Get()
         {
             return Ok(await _turnoLogic.ShiftList());
         }
-
-        // ---------------- GET BY ID AND DATE ----------------
 
         [HttpGet("{id}")]
         public async Task<ActionResult<VwTurno>> Get(int id)
@@ -48,7 +43,6 @@ namespace ApiGestionTurnosMedicos.Controllers
 
             return Ok(turno);
         }
-
 
         [HttpGet("get-by-date/{fecha}")]
         public async Task<ActionResult<List<VwTurno>>> GetByDate(string fecha)
@@ -70,8 +64,6 @@ namespace ApiGestionTurnosMedicos.Controllers
         {
             return Ok(await _turnoLogic.ListOfCalendarData(start, end));
         }
-
-        // ---------------- CREATE ----------------
 
         [HttpPost]
         public async Task<IActionResult> Post([FromBody] TurnoCustom oShift)
@@ -101,8 +93,6 @@ namespace ApiGestionTurnosMedicos.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
-
-        // ---------------- UPDATE ----------------
 
         [HttpPut("{id:int}")]
         public async Task<IActionResult> UpdateTurno(int id, [FromBody] TurnoCustom dto)
@@ -134,11 +124,9 @@ namespace ApiGestionTurnosMedicos.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error actualizando turno");
-                return StatusCode(500, "Error interno");
+                return StatusCode(500, new { message = "Error interno" });
             }
         }
-
-        // ---------------- UPDATE STATUS ----------------
 
         [HttpPut("set-turno-status/{id:int}")]
         public async Task<IActionResult> UpdateTurnoStatus(int id, [FromQuery] int st, [FromQuery] int? o = null)
@@ -159,11 +147,9 @@ namespace ApiGestionTurnosMedicos.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error actualizando estado");
-                return StatusCode(500, "Error interno");
+                return StatusCode(500, new { message = "Error interno" });
             }
         }
-
-        // ---------------- DELETE ----------------
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
@@ -180,15 +166,19 @@ namespace ApiGestionTurnosMedicos.Controllers
             }
         }
 
-        // ---------------- LIST BY PATIENT ----------------
-
+        // Mantener este endpoint (frontend nuevo)
         [HttpGet("get-turnos-by-patient/{idPaciente}")]
         public async Task<ActionResult<List<VwTurno>>> GetListOfShiftsByPatientVw(int idPaciente)
         {
             return Ok(await _turnoLogic.ListOfShiftsByPatientVw(idPaciente));
         }
 
-        // ---------------- LIST BY DOCTOR ----------------
+        // Alias para compatibilidad (si algún frontend viejo usa get-by-patient)
+        [HttpGet("get-by-patient/{idPaciente}")]
+        public async Task<ActionResult<List<VwTurno>>> GetListOfShiftsByPatientVwAlias(int idPaciente)
+        {
+            return Ok(await _turnoLogic.ListOfShiftsByPatientVw(idPaciente));
+        }
 
         [HttpGet("get-turnos-of-doctor/{idMedico}")]
         public async Task<ActionResult<List<Turno>>> GetListOfShiftsByDoctor(int idMedico)
@@ -196,7 +186,12 @@ namespace ApiGestionTurnosMedicos.Controllers
             return Ok(await _turnoLogic.ListOfShiftsByDoctor(idMedico));
         }
 
-        // ---------------- DASHBOARD ----------------
+        // Nuevo endpoint para frontend de tablas (completo)
+        [HttpGet("get-turnos-of-doctor-vw/{idMedico}")]
+        public async Task<ActionResult<List<VwTurno>>> GetListOfShiftsByDoctorVw(int idMedico)
+        {
+            return Ok(await _turnoLogic.ListOfShiftsByDoctorVw(idMedico));
+        }
 
         [HttpGet("get-dashboard-data")]
         public async Task<ActionResult<Dictionary<string, object>>> GetDashboardData()
@@ -208,16 +203,16 @@ namespace ApiGestionTurnosMedicos.Controllers
                 var taskQtyYr = _turnoLogic.ListOfShiftQtyCurrentYear();
                 var taskQtyMo = _turnoLogic.ListOfShiftQtyCurrentMonth();
                 var taskQtyDoc = _turnoLogic.ListOfShiftByDoctorQtyCurrentYear();
-                var qtyStatesYr = _turnoLogic.ListOfShiftStateQtyCurrentYear();
+                var taskQtyStatesYr = Task.Run(() => _turnoLogic.ListOfShiftStateQtyCurrentYear());
 
-                await Task.WhenAll(taskQtyYr, taskQtyMo, taskQtyDoc);
+                await Task.WhenAll(taskQtyYr, taskQtyMo, taskQtyDoc, taskQtyStatesYr);
 
                 var result = new Dictionary<string, object>
                 {
                     { "qtyTurnosYr", await taskQtyYr },
                     { "qtyTurnosMo", await taskQtyMo },
                     { "qtyTurnosXMedico", await taskQtyDoc },
-                    { "qtyStatesYr", qtyStatesYr }
+                    { "qtyStatesYr", await taskQtyStatesYr }
                 };
 
                 stopwatch.Stop();
