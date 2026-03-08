@@ -2,6 +2,7 @@
 using DataAccess.Context;
 using DataAccess.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace DataAccess.Repository
 {
@@ -83,7 +84,21 @@ namespace DataAccess.Repository
         }
         public async Task UpdateDoctorWithSchedules(Medico medico, List<HorarioMedico> horarios)
         {
-            using var tx = await _context.Database.BeginTransactionAsync();
+            var provider = _context.Database.ProviderName ?? string.Empty;
+            var isInMemory = provider.Contains("InMemory", StringComparison.OrdinalIgnoreCase);
+
+            IDbContextTransaction? tx = null;
+            if (!isInMemory)
+            {
+                try
+                {
+                    tx = await _context.Database.BeginTransactionAsync();
+                }
+                catch
+                {
+                    tx = null;
+                }
+            }
 
             try
             {
@@ -105,15 +120,26 @@ namespace DataAccess.Repository
                 doctorDb.Matricula = medico.Matricula;
                 doctorDb.Foto = medico.Foto;
 
-                await _context.SaveChangesAsync();
+                // 3) Borrar agenda anterior en servidor con un solo comando
+                // (EF Core 8 soporta ExecuteDeleteAsync => evita traer entidades a memoria)
+                // if (isInMemory)
+                // {
+                //     // InMemory provider doesn't translate ExecuteDeleteAsync. Fall back to loading and removing.
+                //     var existentes = await _context.HorariosMedicos.Where(h => h.MedicoId == medico.Id).ToListAsync();
+                //     if (existentes.Count > 0)
+                //         _context.HorariosMedicos.RemoveRange(existentes);
+                // }
+                // else
+                // {
+                //     await _context.HorariosMedicos
+                //         .Where(h => h.MedicoId == medico.Id)
+                //         .ExecuteDeleteAsync();
+                // }
 
-                // 3) Borrar agenda anterior
-                var existentes = await _context.HorariosMedicos
-                    .Where(h => h.MedicoId == medico.Id)
-                    .ToListAsync();
-
-                _context.HorariosMedicos.RemoveRange(existentes);
-                await _context.SaveChangesAsync();
+                // Cargar horarios existentes y eliminarlos (compatible con todos los providers)
+                var existentes = await _context.HorariosMedicos.Where(h => h.MedicoId == medico.Id).ToListAsync();
+                if (existentes.Count > 0)
+                    _context.HorariosMedicos.RemoveRange(existentes);
 
                 // 4) Insertar agenda nueva (1 registro por día válido)
                 var nuevos = (horarios ?? new List<HorarioMedico>())
@@ -129,20 +155,39 @@ namespace DataAccess.Repository
                     })
                     .ToList();
 
+                // Desactivar AutoDetectChanges durante el AddRange masivo para reducir overhead
                 if (nuevos.Count > 0)
                 {
-                    await _context.HorariosMedicos.AddRangeAsync(nuevos);
-                    await _context.SaveChangesAsync();
+                    var autoDetect = _context.ChangeTracker.AutoDetectChangesEnabled;
+                    try
+                    {
+                        _context.ChangeTracker.AutoDetectChangesEnabled = false;
+                        await _context.HorariosMedicos.AddRangeAsync(nuevos);
+                    }
+                    finally
+                    {
+                        _context.ChangeTracker.AutoDetectChangesEnabled = autoDetect;
+                    }
                 }
 
-                await tx.CommitAsync();
+                // 5) Persistir todos los cambios en una única llamada
+                await _context.SaveChangesAsync();
+
+                if (tx != null)
+                    await tx.CommitAsync();
             }
             catch
             {
-                await tx.RollbackAsync();
+                if (tx != null)
+                    await tx.RollbackAsync();
                 throw;
             }
-        }
+            finally
+            {
+                if (tx != null)
+                    await tx.DisposeAsync();
+            }
+         }
 
 
 

@@ -127,7 +127,13 @@ namespace ApiGestionTurnosMedicos.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error actualizando médico {Id}", id);
-                return StatusCode(500, "Error interno al actualizar médico");
+                // DEBUG: devolver detalles de la excepción temporalmente para identificar causa del 500
+                return StatusCode(500, new
+                {
+                    error = ex.Message,
+                    inner = ex.InnerException?.Message,
+                    stack = ex.StackTrace
+                });
             }
         }
 

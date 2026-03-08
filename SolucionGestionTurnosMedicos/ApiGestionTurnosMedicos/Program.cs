@@ -6,6 +6,7 @@ using BusinessLogic.AppLogic.Services;
 using DataAccess.Context;
 using DataAccess.Data;
 using DataAccess.Repository;
+using DataAccess.Interceptors;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -29,6 +30,9 @@ builder.Logging.AddConsole();
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
+builder.Services.AddSingleton<EfDbCommandInterceptor>();
+builder.Services.AddSingleton<SaveChangesTimingInterceptor>();
+
 builder.Services.AddDbContext<GestionTurnosContext>(options =>
 {
     options.UseSqlServer(connectionString, sqlOptions =>
@@ -43,6 +47,10 @@ builder.Services.AddDbContext<GestionTurnosContext>(options =>
     {
         options.EnableSensitiveDataLogging();
     }
+
+    // Registrar interceptores
+    options.AddInterceptors(builder.Services.BuildServiceProvider().GetRequiredService<EfDbCommandInterceptor>());
+    options.AddInterceptors(builder.Services.BuildServiceProvider().GetRequiredService<SaveChangesTimingInterceptor>());
 });
 
 // ---------------------------------------------------------
