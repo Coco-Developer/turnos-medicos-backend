@@ -84,32 +84,16 @@ namespace DataAccess.Repository
         }
         public async Task UpdateDoctorWithSchedules(Medico medico, List<HorarioMedico> horarios)
         {
-            var provider = _context.Database.ProviderName ?? string.Empty;
-            var isInMemory = provider.Contains("InMemory", StringComparison.OrdinalIgnoreCase);
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            IDbContextTransaction? tx = null;
-            if (!isInMemory)
+            await strategy.ExecuteAsync(async () =>
             {
-                try
-                {
-                    tx = await _context.Database.BeginTransactionAsync();
-                }
-                catch
-                {
-                    tx = null;
-                }
-            }
+                await using var tx = await _context.Database.BeginTransactionAsync();
 
-            try
-            {
-                // 1) Cargar médico "limpio" (sin Include Horarios)
-                var doctorDb = await _context.Medicos
-                    .FirstOrDefaultAsync(m => m.Id == medico.Id);
-
+                var doctorDb = await _context.Medicos.FirstOrDefaultAsync(m => m.Id == medico.Id);
                 if (doctorDb == null)
                     throw new ArgumentException($"No existe médico con Id {medico.Id}");
 
-                // 2) Actualizar solo campos escalares
                 doctorDb.Nombre = medico.Nombre;
                 doctorDb.Apellido = medico.Apellido;
                 doctorDb.Dni = medico.Dni;
@@ -120,28 +104,13 @@ namespace DataAccess.Repository
                 doctorDb.Matricula = medico.Matricula;
                 doctorDb.Foto = medico.Foto;
 
-                // 3) Borrar agenda anterior en servidor con un solo comando
-                // (EF Core 8 soporta ExecuteDeleteAsync => evita traer entidades a memoria)
-                // if (isInMemory)
-                // {
-                //     // InMemory provider doesn't translate ExecuteDeleteAsync. Fall back to loading and removing.
-                //     var existentes = await _context.HorariosMedicos.Where(h => h.MedicoId == medico.Id).ToListAsync();
-                //     if (existentes.Count > 0)
-                //         _context.HorariosMedicos.RemoveRange(existentes);
-                // }
-                // else
-                // {
-                //     await _context.HorariosMedicos
-                //         .Where(h => h.MedicoId == medico.Id)
-                //         .ExecuteDeleteAsync();
-                // }
+                var existentes = await _context.HorariosMedicos
+                    .Where(h => h.MedicoId == medico.Id)
+                    .ToListAsync();
 
-                // Cargar horarios existentes y eliminarlos (compatible con todos los providers)
-                var existentes = await _context.HorariosMedicos.Where(h => h.MedicoId == medico.Id).ToListAsync();
                 if (existentes.Count > 0)
                     _context.HorariosMedicos.RemoveRange(existentes);
 
-                // 4) Insertar agenda nueva (1 registro por día válido)
                 var nuevos = (horarios ?? new List<HorarioMedico>())
                     .Where(h => h.HorarioAtencionInicio != null && h.HorarioAtencionFin != null)
                     .GroupBy(h => h.DiaSemana)
@@ -155,39 +124,14 @@ namespace DataAccess.Repository
                     })
                     .ToList();
 
-                // Desactivar AutoDetectChanges durante el AddRange masivo para reducir overhead
                 if (nuevos.Count > 0)
-                {
-                    var autoDetect = _context.ChangeTracker.AutoDetectChangesEnabled;
-                    try
-                    {
-                        _context.ChangeTracker.AutoDetectChangesEnabled = false;
-                        await _context.HorariosMedicos.AddRangeAsync(nuevos);
-                    }
-                    finally
-                    {
-                        _context.ChangeTracker.AutoDetectChangesEnabled = autoDetect;
-                    }
-                }
+                    await _context.HorariosMedicos.AddRangeAsync(nuevos);
 
-                // 5) Persistir todos los cambios en una única llamada
                 await _context.SaveChangesAsync();
+                await tx.CommitAsync();
+            });
+        }
 
-                if (tx != null)
-                    await tx.CommitAsync();
-            }
-            catch
-            {
-                if (tx != null)
-                    await tx.RollbackAsync();
-                throw;
-            }
-            finally
-            {
-                if (tx != null)
-                    await tx.DisposeAsync();
-            }
-         }
 
 
 

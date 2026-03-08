@@ -114,8 +114,13 @@ namespace ApiGestionTurnosMedicos.Controllers
             if (dto == null)
                 return BadRequest(new { message = "Datos inválidos" });
 
-            var validation = await _validationsPut.ValidateDoctorAsync(dto);
+            if (id <= 0)
+                return BadRequest(new { message = "Id inválido." });
 
+            if (dto.Id > 0 && dto.Id != id)
+                return BadRequest(new { message = "El id de la ruta no coincide con el id del cuerpo." });
+
+            var validation = await _validationsPut.ValidateDoctorAsync(dto);
             if (!validation.IsValid)
                 return BadRequest(new { message = validation.ErrorMessage });
 
@@ -127,15 +132,21 @@ namespace ApiGestionTurnosMedicos.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error actualizando médico {Id}", id);
-                // DEBUG: devolver detalles de la excepción temporalmente para identificar causa del 500
-                return StatusCode(500, new
+
+                if (HttpContext.RequestServices.GetRequiredService<IWebHostEnvironment>().IsDevelopment())
                 {
-                    error = ex.Message,
-                    inner = ex.InnerException?.Message,
-                    stack = ex.StackTrace
-                });
+                    return StatusCode(500, new
+                    {
+                        error = ex.Message,
+                        inner = ex.InnerException?.Message,
+                        stack = ex.StackTrace
+                    });
+                }
+
+                return StatusCode(500, new { message = "Error interno al actualizar médico" });
             }
         }
+
 
         #endregion
 
